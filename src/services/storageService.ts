@@ -1,12 +1,46 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MMKV } from 'react-native-mmkv';
 import { STORAGE_KEYS } from '@config/constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User } from '@types/models';
 
 /**
- * MMKV storage instance for fast key-value storage
+ * Provide a promise-based wrapper around MMKV (which is synchronous)
+ * and fall back to AsyncStorage when MMKV is not available (e.g. web).
  */
-const mmkvStorage = new MMKV();
+type MMKVLike = {
+  getString: (key: string) => Promise<string | null> | string | null;
+  set: (key: string, value: string | boolean) => Promise<void> | void;
+  delete: (key: string) => Promise<void> | void;
+  getBoolean?: (key: string) => Promise<boolean> | boolean;
+  clearAll?: () => Promise<void> | void;
+};
+
+let mmkvStorage: MMKVLike;
+
+try {
+  // Try to create an MMKV instance. On environments where MMKV isn't
+  // available this will throw (for example running in Expo web).
+  // Wrap synchronous MMKV methods to return Promises so callers can
+  // `await` them uniformly.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const real = new (MMKV as any)();
+
+  mmkvStorage = {
+    getString: (k: string) => Promise.resolve(real.getString(k)),
+    set: (k: string, v: string | boolean) => Promise.resolve(real.set(k, v)),
+    delete: (k: string) => Promise.resolve(real.delete(k)),
+    getBoolean: (k: string) => Promise.resolve(typeof real.getBoolean === 'function' ? real.getBoolean(k) : !!real.getString(k)),
+    clearAll: () => Promise.resolve(typeof real.clearAll === 'function' ? real.clearAll() : undefined),
+  };
+} catch (error) {
+  // Fallback implementation using AsyncStorage (async API)
+  mmkvStorage = {
+    getString: (k: string) => AsyncStorage.getItem(k),
+    set: (k: string, v: string | boolean) => AsyncStorage.setItem(k, String(v)),
+    delete: (k: string) => AsyncStorage.removeItem(k),
+    getBoolean: async (k: string) => (await AsyncStorage.getItem(k)) === 'true',
+    clearAll: () => AsyncStorage.clear(),
+  };
+}
 
 /**
  * Storage Service - Handles all persistent storage operations
@@ -17,7 +51,8 @@ class StorageService {
    */
   async getToken(): Promise<string | null> {
     try {
-      return mmkvStorage.getString(STORAGE_KEYS.AUTH_TOKEN) || null;
+      const token = await mmkvStorage.getString(STORAGE_KEYS.AUTH_TOKEN);
+      return token || null;
     } catch (error) {
       console.error('Error getting token:', error);
       return null;
@@ -26,7 +61,7 @@ class StorageService {
 
   async setToken(token: string): Promise<void> {
     try {
-      mmkvStorage.set(STORAGE_KEYS.AUTH_TOKEN, token);
+      await mmkvStorage.set(STORAGE_KEYS.AUTH_TOKEN, token);
     } catch (error) {
       console.error('Error setting token:', error);
     }
@@ -34,9 +69,62 @@ class StorageService {
 
   async removeToken(): Promise<void> {
     try {
-      mmkvStorage.delete(STORAGE_KEYS.AUTH_TOKEN);
+      await mmkvStorage.delete(STORAGE_KEYS.AUTH_TOKEN);
     } catch (error) {
       console.error('Error removing token:', error);
+    }
+  }
+
+  /**
+   * Generic getters/setters to support code that expects simple key-based access
+   */
+  async getItem<T = any>(key: string): Promise<T | null> {
+    try {
+      const raw = await mmkvStorage.getString(key);
+      if (raw == null) return null;
+      try {
+        return JSON.parse(raw) as T;
+      } catch {
+        return raw as unknown as T;
+      }
+    } catch (error) {
+      try {
+        const raw = await AsyncStorage.getItem(key);
+        if (raw == null) return null;
+        try {
+          return JSON.parse(raw) as T;
+        } catch {
+          return raw as unknown as T;
+        }
+      } catch (err) {
+        console.error('Error getting item:', err);
+        return null;
+      }
+    }
+  }
+
+  async setItem(key: string, value: any): Promise<void> {
+    const toStore = typeof value === 'string' ? value : JSON.stringify(value);
+    try {
+      await mmkvStorage.set(key, toStore);
+    } catch (error) {
+      try {
+        await AsyncStorage.setItem(key, toStore);
+      } catch (err) {
+        console.error('Error setting item:', err);
+      }
+    }
+  }
+
+  async removeItem(key: string): Promise<void> {
+    try {
+      await mmkvStorage.delete(key);
+    } catch (error) {
+      try {
+        await AsyncStorage.removeItem(key);
+      } catch (err) {
+        console.error('Error removing item:', err);
+      }
     }
   }
 
@@ -74,7 +162,8 @@ class StorageService {
    */
   async getTheme(): Promise<'light' | 'dark' | null> {
     try {
-      return (mmkvStorage.getString(STORAGE_KEYS.THEME) as 'light' | 'dark') || null;
+      const theme = (await mmkvStorage.getString(STORAGE_KEYS.THEME)) as 'light' | 'dark' | null;
+      return theme || null;
     } catch (error) {
       console.error('Error getting theme:', error);
       return null;
@@ -83,7 +172,7 @@ class StorageService {
 
   async setTheme(theme: 'light' | 'dark'): Promise<void> {
     try {
-      mmkvStorage.set(STORAGE_KEYS.THEME, theme);
+      await mmkvStorage.set(STORAGE_KEYS.THEME, theme);
     } catch (error) {
       console.error('Error setting theme:', error);
     }
@@ -94,7 +183,8 @@ class StorageService {
    */
   async getBiometricEnabled(): Promise<boolean> {
     try {
-      return mmkvStorage.getBoolean(STORAGE_KEYS.BIOMETRIC_ENABLED) || false;
+      const enabled = await (mmkvStorage.getBoolean ? mmkvStorage.getBoolean(STORAGE_KEYS.BIOMETRIC_ENABLED) : Promise.resolve(false));
+      return !!enabled;
     } catch (error) {
       console.error('Error getting biometric setting:', error);
       return false;
@@ -103,7 +193,7 @@ class StorageService {
 
   async setBiometricEnabled(enabled: boolean): Promise<void> {
     try {
-      mmkvStorage.set(STORAGE_KEYS.BIOMETRIC_ENABLED, enabled);
+      await mmkvStorage.set(STORAGE_KEYS.BIOMETRIC_ENABLED, enabled);
     } catch (error) {
       console.error('Error setting biometric:', error);
     }
@@ -114,7 +204,8 @@ class StorageService {
    */
   async getPushToken(): Promise<string | null> {
     try {
-      return mmkvStorage.getString(STORAGE_KEYS.PUSH_TOKEN) || null;
+      const token = await mmkvStorage.getString(STORAGE_KEYS.PUSH_TOKEN);
+      return token || null;
     } catch (error) {
       console.error('Error getting push token:', error);
       return null;
@@ -123,7 +214,7 @@ class StorageService {
 
   async setPushToken(token: string): Promise<void> {
     try {
-      mmkvStorage.set(STORAGE_KEYS.PUSH_TOKEN, token);
+      await mmkvStorage.set(STORAGE_KEYS.PUSH_TOKEN, token);
     } catch (error) {
       console.error('Error setting push token:', error);
     }
@@ -215,7 +306,7 @@ class StorageService {
   async clearAll(): Promise<void> {
     try {
       await AsyncStorage.clear();
-      mmkvStorage.clearAll();
+      if (mmkvStorage.clearAll) await mmkvStorage.clearAll();
     } catch (error) {
       console.error('Error clearing all storage:', error);
     }
