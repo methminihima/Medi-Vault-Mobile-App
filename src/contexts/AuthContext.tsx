@@ -1,4 +1,4 @@
-import { authAPI } from '@/src/api/auth';
+import { authApi } from '@/src/api/auth';
 import { STORAGE_KEYS } from '@/src/config/constants';
 import { storageService } from '@/src/services/storageService';
 import { AuthState, LoginCredentials, RegisterData } from '@/src/types/auth';
@@ -71,7 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = async (credentials: LoginCredentials) => {
     try {
-      const response = await authAPI.login(credentials);
+      const response = await authApi.login(credentials);
       const { token, user } = response.data;
 
       // Store auth data
@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const register = async (data: RegisterData) => {
     try {
-      const response = await authAPI.register(data);
+      const response = await authApi.register(data);
       const { token, user } = response.data;
 
       // Store auth data
@@ -113,7 +113,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = async () => {
     try {
-      await authAPI.logout();
+      await authApi.logout();
     } catch (error) {
       console.error('Logout API error:', error);
     } finally {

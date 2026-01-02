@@ -76,6 +76,90 @@ class StorageService {
   }
 
   /**
+   * Session Management
+   */
+  async getSessionId(): Promise<string | null> {
+    try {
+      const sessionId = await mmkvStorage.getString(STORAGE_KEYS.SESSION_ID);
+      return sessionId || null;
+    } catch (error) {
+      console.error('Error getting session ID:', error);
+      return null;
+    }
+  }
+
+  async setSessionId(sessionId: string): Promise<void> {
+    try {
+      await mmkvStorage.set(STORAGE_KEYS.SESSION_ID, sessionId);
+    } catch (error) {
+      console.error('Error setting session ID:', error);
+    }
+  }
+
+  async removeSessionId(): Promise<void> {
+    try {
+      await mmkvStorage.delete(STORAGE_KEYS.SESSION_ID);
+    } catch (error) {
+      console.error('Error removing session ID:', error);
+    }
+  }
+
+  async getSessionExpiry(): Promise<number | null> {
+    try {
+      const expiry = await mmkvStorage.getString(STORAGE_KEYS.SESSION_EXPIRY);
+      return expiry ? parseInt(expiry, 10) : null;
+    } catch (error) {
+      console.error('Error getting session expiry:', error);
+      return null;
+    }
+  }
+
+  async setSessionExpiry(timestamp: number): Promise<void> {
+    try {
+      await mmkvStorage.set(STORAGE_KEYS.SESSION_EXPIRY, timestamp.toString());
+    } catch (error) {
+      console.error('Error setting session expiry:', error);
+    }
+  }
+
+  async removeSessionExpiry(): Promise<void> {
+    try {
+      await mmkvStorage.delete(STORAGE_KEYS.SESSION_EXPIRY);
+    } catch (error) {
+      console.error('Error removing session expiry:', error);
+    }
+  }
+
+  async isSessionValid(): Promise<boolean> {
+    try {
+      const expiry = await this.getSessionExpiry();
+      if (!expiry) return false;
+      return Date.now() < expiry;
+    } catch (error) {
+      console.error('Error checking session validity:', error);
+      return false;
+    }
+  }
+
+  async getRememberMe(): Promise<boolean> {
+    try {
+      const rememberMe = await (mmkvStorage.getBoolean ? mmkvStorage.getBoolean(STORAGE_KEYS.REMEMBER_ME) : Promise.resolve(false));
+      return !!rememberMe;
+    } catch (error) {
+      console.error('Error getting remember me:', error);
+      return false;
+    }
+  }
+
+  async setRememberMe(enabled: boolean): Promise<void> {
+    try {
+      await mmkvStorage.set(STORAGE_KEYS.REMEMBER_ME, enabled);
+    } catch (error) {
+      console.error('Error setting remember me:', error);
+    }
+  }
+
+  /**
    * Generic getters/setters to support code that expects simple key-based access
    */
   async getItem<T = any>(key: string): Promise<T | null> {
@@ -298,6 +382,20 @@ class StorageService {
   async clearAuth(): Promise<void> {
     await this.removeToken();
     await this.removeUser();
+  }
+
+  /**
+   * Clear Session Data
+   */
+  async clearSession(): Promise<void> {
+    try {
+      await this.removeToken();
+      await this.removeSessionId();
+      await this.removeSessionExpiry();
+      await this.removeUser();
+    } catch (error) {
+      console.error('Error clearing session:', error);
+    }
   }
 
   /**

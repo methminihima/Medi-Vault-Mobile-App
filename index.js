@@ -1,9 +1,14 @@
 /**
+ * Expo Router Entry Point
  * @format
  */
 
-import { AppRegistry } from 'react-native';
-import App from './src/App';
-import { name as appName } from './app.json';
+// Import error handler first
+import './errorHandler';
 
-AppRegistry.registerComponent(appName, () => App);
+// Polyfill for global if needed
+if (typeof global === 'undefined') {
+  window.global = window;
+}
+
+import 'expo-router/entry';

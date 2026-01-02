@@ -1,9 +1,8 @@
 export interface LoginCredentials {
-  email: string;
+  username: string;
   password: string;
   remember?: boolean;
 }
-
 export interface RegisterData {
   email: string;
   password: string;

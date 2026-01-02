@@ -30,6 +30,35 @@ export default function TabLayout() {
           tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
         }}
       />
+      <Tabs.Screen
+        name="doctor-dashboard"
+        options={{
+          title: 'Dashboard',
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="admin-dashboard"
+        options={{
+          title: 'Admin',
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="pharmacist-dashboard"
+        options={{
+          title: 'Pharmacist',
+          href: null, // Hide from tab bar
+        }}
+      />
+      <Tabs.Screen
+        name="lab-technician-dashboard"
+        options={{
+          title: 'Lab Technician',
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }
+

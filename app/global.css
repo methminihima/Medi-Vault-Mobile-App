@@ -1,0 +1,14 @@
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+    box-sizing: border-box;
+}
+body {
+  /* Add the standard property first for modern browsers */
+  text-size-adjust: 100%; 
+  
+  /* Keep the deprecated vendor prefixes for wider, older browser support */
+  -ms-text-size-adjust: 100%; 
+  -webkit-text-size-adjust: 100%;
+}

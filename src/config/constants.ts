@@ -1,8 +1,72 @@
 /**
  * API Configuration
  */
-export const API_BASE_URL = process.env.API_BASE_URL || 'http://localhost:5000/api';
-export const WS_URL = process.env.WS_URL || 'ws://localhost:5000';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+
+// For Android Emulator use 10.0.2.2, for iOS Simulator/Web use localhost
+// For physical device, use your computer's LAN IP address (e.g., 192.168.1.100)
+const DEFAULT_API_BASE_URL =
+  Platform.OS === 'android'
+    ? 'http://10.0.2.2:5000/api'
+    : 'http://localhost:5000/api';
+
+const DEFAULT_WS_URL =
+  Platform.OS === 'android'
+    ? 'ws://10.0.2.2:5000'
+    : 'ws://localhost:5000';
+
+function getDevHostFromExpo(): string | null {
+  // In Expo Go / dev, hostUri often contains the LAN IP of your machine, e.g. "192.168.1.5:8081".
+  // This lets a physical phone reach your backend at http://<LAN_IP>:5000.
+  const hostUri: unknown =
+    (Constants as any)?.expoConfig?.hostUri ??
+    (Constants as any)?.manifest2?.extra?.expoClient?.hostUri ??
+    (Constants as any)?.manifest?.hostUri;
+
+  if (typeof hostUri !== 'string' || !hostUri) return null;
+  const host = hostUri.split(':')[0]?.trim();
+  if (!host) return null;
+  if (host === 'localhost' || host === '127.0.0.1' || host === '10.0.2.2') return null;
+  return host;
+}
+
+function shouldAutoUseDevHost(baseUrl: string): boolean {
+  // If base URL is pointing at localhost / emulator host, a real device can't reach it.
+  return /:\/\/(localhost|127\.0\.0\.1|10\.0\.2\.2)(:|\/)/i.test(baseUrl);
+}
+
+function resolveApiBaseUrl(): string {
+  // Expo uses EXPO_PUBLIC_* for env vars in the client bundle.
+  const envBase = process.env.EXPO_PUBLIC_API_BASE_URL || process.env.API_BASE_URL;
+  let base = envBase || DEFAULT_API_BASE_URL;
+
+  if (Platform.OS !== 'web' && shouldAutoUseDevHost(base)) {
+    const host = getDevHostFromExpo();
+    if (host) {
+      base = `http://${host}:5000/api`;
+    }
+  }
+
+  return base;
+}
+
+function resolveWsUrl(): string {
+  const envWs = process.env.EXPO_PUBLIC_WS_URL || process.env.WS_URL;
+  let ws = envWs || DEFAULT_WS_URL;
+
+  if (Platform.OS !== 'web' && shouldAutoUseDevHost(ws)) {
+    const host = getDevHostFromExpo();
+    if (host) {
+      ws = `ws://${host}:5000`;
+    }
+  }
+
+  return ws;
+}
+
+export const API_BASE_URL = resolveApiBaseUrl();
+export const WS_URL = resolveWsUrl();
 export const ENVIRONMENT = process.env.ENVIRONMENT || 'development';
 
 /**
@@ -10,6 +74,9 @@ export const ENVIRONMENT = process.env.ENVIRONMENT || 'development';
  */
 export const STORAGE_KEYS = {
   AUTH_TOKEN: '@medivault:auth_token',
+  SESSION_ID: '@medivault:session_id',
+  SESSION_EXPIRY: '@medivault:session_expiry',
+  REMEMBER_ME: '@medivault:remember_me',
   USER_DATA: '@medivault:user_data',
   THEME: '@medivault:theme',
   BIOMETRIC_ENABLED: '@medivault:biometric_enabled',

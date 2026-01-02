@@ -1,20 +1,93 @@
-# Welcome to your Expo app 👋
+# MediVault - Healthcare Management System 🏥
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A comprehensive healthcare management system built with React Native (Expo) and PostgreSQL.
 
-## Get started
+## 🚀 Quick Start
 
-1. Install dependencies
+### Frontend (React Native App)
 
+1. **Install dependencies**
    ```bash
    npm install
    ```
 
-2. Start the app
-
+2. **Start the app**
    ```bash
    npx expo start
    ```
+
+### Backend (Node.js + PostgreSQL)
+
+1. **Setup database in pgAdmin**
+   - Create database: `medivault_db`
+   - Run: `backend/database/schema.sql`
+
+2. **Start backend server**
+   ```bash
+   # Double-click: start-backend.bat
+   # OR
+   cd backend
+   npm install
+   npm run dev
+   ```
+
+3. **Configure database credentials**
+   - Edit `backend/.env`
+   - Update your PostgreSQL password
+
+## 📚 Documentation
+
+- **[SETUP_COMPLETE.md](SETUP_COMPLETE.md)** - Quick reference guide
+- **[BACKEND_CONNECTION_GUIDE.md](BACKEND_CONNECTION_GUIDE.md)** - Detailed setup instructions
+- **[ARCHITECTURE_DIAGRAM.md](ARCHITECTURE_DIAGRAM.md)** - System architecture
+- **[backend/README.md](backend/README.md)** - Backend API documentation
+
+## 🎯 Current Features
+
+✅ **Admin Dashboard**
+- User management
+- Create users (connected to database!)
+- View users by role
+- System statistics
+
+✅ **Authentication System**
+- Login/Register
+- Session management
+- Role-based access
+
+✅ **Database Integration**
+- PostgreSQL backend
+- RESTful API
+- Secure password hashing
+
+## 🏗️ Project Structure
+
+```
+├── app/                    # React Native screens
+│   ├── (auth)/            # Authentication screens
+│   └── (tabs)/            # Main app screens
+├── components/            # Reusable components
+│   ├── admin/            # Admin-specific components
+│   ├── doctor/           # Doctor components
+│   └── shared/           # Shared components
+├── src/
+│   ├── api/              # API client
+│   ├── config/           # Configuration
+│   └── services/         # Business logic
+└── backend/              # Node.js backend
+    ├── routes/           # API routes
+    ├── config/           # Database config
+    └── database/         # SQL schemas
+```
+
+## 🔧 Technology Stack
+
+- **Frontend:** React Native, Expo, TypeScript
+- **Backend:** Node.js, Express.js
+- **Database:** PostgreSQL
+- **Authentication:** JWT, bcrypt
+
+## 📱 Available Screens
 
 In the output, you'll find options to open the app in a
 
