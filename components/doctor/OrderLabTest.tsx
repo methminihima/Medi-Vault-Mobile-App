@@ -1,16 +1,17 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
-    Alert,
-    Dimensions,
-    ImageBackground,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Dimensions,
+  ImageBackground,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { API_BASE_URL } from '../../src/config/constants';
 
 const { width } = Dimensions.get('window');
 const isSmallScreen = width < 360;
@@ -22,13 +23,12 @@ interface LabTestItem {
   instructions: string;
 }
 
-interface PatientInfo {
-  name: string;
-  nic: string;
-  age: string;
-  phone: string;
-  clinicalInfo: string;
-}
+type OrderLabTestProps = {
+  patientId?: string | number;
+  doctorId?: string | number;
+  appointmentId?: string | number;
+  onSaved?: (result: { ids: string[] }) => void;
+};
 
 const TEST_CATEGORIES = [
   'Hematology',
@@ -58,15 +58,7 @@ const COMMON_TESTS = [
   { name: 'ECG', type: 'Diagnostic', category: 'Other' },
 ];
 
-export default function OrderLabTest() {
-  const [patientInfo, setPatientInfo] = useState<PatientInfo>({
-    name: '',
-    nic: '',
-    age: '',
-    phone: '',
-    clinicalInfo: '',
-  });
-
+export default function OrderLabTest({ patientId, doctorId, appointmentId, onSaved }: OrderLabTestProps) {
   const [labTests, setLabTests] = useState<LabTestItem[]>([
     { testName: '', testType: '', category: '', instructions: '' },
   ]);
@@ -118,16 +110,6 @@ export default function OrderLabTest() {
   };
 
   const validateForm = () => {
-    if (!patientInfo.name.trim()) {
-      Alert.alert('Validation Error', 'Please enter patient name');
-      return false;
-    }
-
-    if (!patientInfo.nic.trim()) {
-      Alert.alert('Validation Error', 'Please enter patient NIC');
-      return false;
-    }
-
     const hasValidTest = labTests.some(
       test => test.testName.trim() && test.testType.trim()
     );
@@ -140,43 +122,76 @@ export default function OrderLabTest() {
     return true;
   };
 
-  const handleGenerateLabOrder = () => {
+  const handleSaveLabOrder = async () => {
     if (!validateForm()) return;
 
-    const orderCode = `LAB-${Date.now()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    if (patientId == null || !String(patientId).trim()) {
+      Alert.alert('Error', 'Patient id is missing. Open Lab Tests from an appointment.');
+      return;
+    }
 
-    Alert.alert(
-      'Lab Order Generated',
-      `Lab Order Code: ${orderCode}\n\nThe lab order has been created and sent to the lab technician.`,
-      [{ text: 'OK' }]
-    );
-  };
+    if (doctorId == null || !String(doctorId).trim()) {
+      Alert.alert('Error', 'Doctor id is missing. Please login again.');
+      return;
+    }
 
-  const handleSaveLabOrder = () => {
-    if (!validateForm()) return;
+    try {
+      const payloadTests = labTests
+        .filter((t) => t.testName.trim() && t.testType.trim())
+        .map((t) => ({
+          testName: t.testName,
+          testType: t.testType,
+          category: t.category,
+          instructions: t.instructions,
+        }));
 
-    Alert.alert(
-      'Success',
-      'Lab order saved successfully! The patient will receive a notification.',
-      [
-        {
-          text: 'Create New Order',
-          onPress: () => {
-            setPatientInfo({
-              name: '',
-              nic: '',
-              age: '',
-              phone: '',
-              clinicalInfo: '',
-            });
-            setLabTests([{ testName: '', testType: '', category: '', instructions: '' }]);
-            setPriority('routine');
-            setAdditionalNotes('');
-          },
+      const resp = await fetch(`${API_BASE_URL}/lab-tests`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
         },
-        { text: 'Done' },
-      ]
-    );
+        body: JSON.stringify({
+          patientId: String(patientId),
+          doctorId: String(doctorId),
+          appointmentId: appointmentId != null && String(appointmentId).trim() ? String(appointmentId) : undefined,
+          priority,
+          additionalNotes,
+          tests: payloadTests,
+        }),
+      });
+
+      const raw = await resp.text();
+      const json = (() => {
+        try {
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.error || json?.message || `Failed to save lab tests (${resp.status})`);
+      }
+
+      const ids = Array.isArray(json?.data?.ids) ? json.data.ids.map((x: any) => String(x)) : [];
+
+      Alert.alert(
+        'Success',
+        'Lab order saved successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              onSaved?.({ ids });
+            },
+          },
+        ]
+      );
+    } catch (e: any) {
+      console.error('Error saving lab tests:', e);
+      Alert.alert('Error', e?.message || 'Failed to save lab order');
+    }
   };
 
   return (
@@ -194,68 +209,7 @@ export default function OrderLabTest() {
         <View style={styles.header}>
           <MaterialCommunityIcons name="test-tube" size={32} color="#1E4BA3" />
           <Text style={styles.headerTitle}>Order Lab Tests</Text>
-          <Text style={styles.headerSubtitle}>Complete patient and test information</Text>
-        </View>
-
-        {/* Patient Information */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Patient Information</Text>
-          
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Patient Name *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter patient name"
-              value={patientInfo.name}
-              onChangeText={text => setPatientInfo({ ...patientInfo, name: text })}
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>NIC Number *</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Enter NIC number"
-              value={patientInfo.nic}
-              onChangeText={text => setPatientInfo({ ...patientInfo, nic: text })}
-            />
-          </View>
-
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.inputLabel}>Age</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Age"
-                keyboardType="numeric"
-                value={patientInfo.age}
-                onChangeText={text => setPatientInfo({ ...patientInfo, age: text })}
-              />
-            </View>
-
-            <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.inputLabel}>Phone</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                keyboardType="phone-pad"
-                value={patientInfo.phone}
-                onChangeText={text => setPatientInfo({ ...patientInfo, phone: text })}
-              />
-            </View>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Clinical Information</Text>
-            <TextInput
-              style={[styles.input, styles.textArea]}
-              placeholder="Patient symptoms, diagnosis, or reason for test"
-              multiline
-              numberOfLines={3}
-              value={patientInfo.clinicalInfo}
-              onChangeText={text => setPatientInfo({ ...patientInfo, clinicalInfo: text })}
-            />
-          </View>
+          <Text style={styles.headerSubtitle}>Complete test information</Text>
         </View>
 
         {/* Priority Selection */}
@@ -424,14 +378,6 @@ export default function OrderLabTest() {
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
-          <TouchableOpacity
-            style={styles.generateButton}
-            onPress={handleGenerateLabOrder}
-          >
-            <MaterialCommunityIcons name="barcode-scan" size={22} color="#fff" />
-            <Text style={styles.generateButtonText}>Generate Lab Order</Text>
-          </TouchableOpacity>
-
           <TouchableOpacity style={styles.saveButton} onPress={handleSaveLabOrder}>
             <Ionicons name="checkmark-circle" size={22} color="#fff" />
             <Text style={styles.saveButtonText}>Save Lab Order</Text>
@@ -520,13 +466,14 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: '#374151',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   input: {
-    backgroundColor: '#F9FAFB',
-    borderRadius: 10,
-    padding: 12,
-    fontSize: 15,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
     color: '#1F2937',
     borderWidth: 1,
     borderColor: '#E5E7EB',
@@ -668,27 +615,10 @@ const styles = StyleSheet.create({
     color: '#fff',
   },
   actionButtons: {
+    flexDirection: isSmallScreen ? 'column' : 'row',
+    justifyContent: 'space-between',
     gap: 12,
     marginBottom: 16,
-  },
-  generateButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#8B5CF6',
-    borderRadius: 12,
-    padding: 16,
-    gap: 8,
-    shadowColor: '#8B5CF6',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 5,
-  },
-  generateButtonText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#fff',
   },
   saveButton: {
     flexDirection: 'row',

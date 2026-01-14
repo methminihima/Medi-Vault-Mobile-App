@@ -1,17 +1,61 @@
 const { Pool } = require('pg');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', '.env') });
+
+function requiredEnv(name) {
+  const v = process.env[name];
+  if (v === undefined || v === null || String(v).trim() === '') {
+    throw new Error(`Missing required environment variable: ${name}. Set it in backend/.env`);
+  }
+  return String(v);
+}
+
+function normalizeHost(host) {
+  const h = String(host || '').trim();
+  if (!h) return '127.0.0.1';
+  // On Windows, 'localhost' can resolve to IPv6 (::1) and time out if Postgres listens only on IPv4.
+  if (h.toLowerCase() === 'localhost') return '127.0.0.1';
+  return h;
+}
+
+function toInt(value, fallback) {
+  const n = Number.parseInt(String(value), 10);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 // PostgreSQL connection pool
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD,
-  max: 20, // Maximum number of clients in pool
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+let pool;
+try {
+  const host = normalizeHost(process.env.DB_HOST);
+  const port = toInt(process.env.DB_PORT, 5432);
+  const database = requiredEnv('DB_NAME');
+  const user = requiredEnv('DB_USER');
+  const password = requiredEnv('DB_PASSWORD');
+  const connectionTimeoutMillis = toInt(process.env.DB_CONNECTION_TIMEOUT_MS, 10000);
+
+  console.log('🔌 PostgreSQL config', {
+    host,
+    port,
+    database,
+    user,
+    connectionTimeoutMillis,
+  });
+
+  pool = new Pool({
+    host,
+    port,
+    database,
+    user,
+    password,
+    max: 20, // Maximum number of clients in pool
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis,
+  });
+} catch (e) {
+  console.error('❌ Database config error:', e?.message || e);
+  // Fail fast so the error is obvious rather than hanging on connection attempts.
+  process.exit(1);
+}
 
 // Test database connection
 pool.on('connect', () => {

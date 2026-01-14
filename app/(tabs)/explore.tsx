@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import { Text as RNText, StyleSheet, TouchableOpacity, View } from 'react-native';
 import ManageNotifications from '../../components/lab-technician/ManageNotifications';
-import AppointmentsView from '../../components/shared/AppointmentsView';
 
 export default function ExploreScreen() {
   const router = useRouter();
@@ -43,7 +42,9 @@ export default function ExploreScreen() {
         </TouchableOpacity>
       </View>
       {activeSection === 'appointments' ? (
-        <AppointmentsView userRole="patient" />
+        <View style={styles.container}>
+          <RNText style={styles.comingSoonText}>Appointments - Coming Soon</RNText>
+        </View>
       ) : (
         <ManageNotifications showBackground={false} />
       )}
@@ -130,6 +131,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginTop: 40,
   },
 });
 

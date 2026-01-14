@@ -7,17 +7,17 @@ import { Link, useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState } from 'react';
 import {
-  Alert,
-  Dimensions,
-  ImageBackground,
-  KeyboardAvoidingView,
-  Platform,
-  Text as RNText,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  View
+    Alert,
+    Dimensions,
+    ImageBackground,
+    KeyboardAvoidingView,
+    Platform,
+    Text as RNText,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import { useFadeIn, useScaleIn, useSlideInLeft } from '../../utils/animations';
@@ -71,6 +71,7 @@ export default function LoginScreen() {
 
     if (role === 'admin') return '/(tabs)/admin-dashboard';
     if (role === 'doctor') return '/(tabs)/doctor-dashboard';
+    if (role === 'patient') return '/(tabs)/patient-dashboard';
     if (role === 'pharmacist') return '/(tabs)/pharmacist-dashboard';
     if (role === 'lab_technician' || role === 'labtechnician') return '/(tabs)/lab-technician-dashboard';
     return '/(tabs)';

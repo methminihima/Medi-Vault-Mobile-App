@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '.env') });
 
 process.on('uncaughtException', (err) => {
   console.error('❌ Uncaught Exception:', err);
@@ -55,10 +56,22 @@ pool.query('SELECT NOW()', (err, res) => {
 const authRoutes = require('./routes/auth');
 const userRoutes = require('./routes/users');
 const notificationRoutes = require('./routes/notifications');
+const appointmentRoutes = require('./routes/appointments');
+const patientRoutes = require('./routes/patients');
+const doctorRoutes = require('./routes/doctors');
+const reportsRoutes = require('./routes/reports');
+const prescriptionsRoutes = require('./routes/prescriptions');
+const labTestsRoutes = require('./routes/lab-tests');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/appointments', appointmentRoutes);
+app.use('/api/patients', patientRoutes);
+app.use('/api/doctors', doctorRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/prescriptions', prescriptionsRoutes);
+app.use('/api/lab-tests', labTestsRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {

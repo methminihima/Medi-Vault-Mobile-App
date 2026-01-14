@@ -27,6 +27,27 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
     username: '',
     password: '',
     confirmPassword: '',
+    // Patient specific fields
+    nic: '',
+    rfid: '',
+    dateOfBirth: '',
+    gender: '',
+    contactInfo: '',
+    address: '',
+    bloodType: '',
+    allergies: '',
+    // Doctor specific fields
+    specialization: '',
+    licenseNumber: '',
+    qualifications: '',
+    experience: '',
+    consultationFee: '',
+    availableDays: '',
+    // Pharmacist specific fields
+    pharmacistLicenseNumber: '',
+    // Lab Technician specific fields
+    labLicenseNumber: '',
+    labSpecialization: '',
   });
 
   const [showRoleMenu, setShowRoleMenu] = useState(false);
@@ -74,8 +95,69 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
       newErrors.confirmPassword = 'Passwords do not match';
     }
 
+    // Role-specific validations
+    if (formData.role === 'patient') {
+      if (!formData.nic.trim()) {
+        newErrors.nic = 'NIC is required for patients';
+      }
+      if (!formData.rfid.trim()) {
+        newErrors.rfid = 'RFID is required for patients';
+      }
+    }
+
+    if (formData.role === 'doctor') {
+      if (!formData.specialization.trim()) {
+        newErrors.specialization = 'Specialization is required for doctors';
+      }
+      if (!formData.licenseNumber.trim()) {
+        newErrors.licenseNumber = 'License number is required for doctors';
+      }
+    }
+
+    if (formData.role === 'pharmacist') {
+      if (!formData.pharmacistLicenseNumber.trim()) {
+        newErrors.pharmacistLicenseNumber = 'License number is required for pharmacists';
+      }
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  };
+
+  const getRoleSpecificData = () => {
+    switch (formData.role) {
+      case 'patient':
+        return {
+          nic: formData.nic,
+          rfid: formData.rfid,
+          dateOfBirth: formData.dateOfBirth,
+          gender: formData.gender,
+          contactInfo: formData.contactInfo,
+          address: formData.address,
+          bloodType: formData.bloodType,
+          allergies: formData.allergies,
+        };
+      case 'doctor':
+        return {
+          specialization: formData.specialization,
+          licenseNumber: formData.licenseNumber,
+          qualifications: formData.qualifications.trim() || null,
+          experience: formData.experience && formData.experience.trim() !== '' ? parseInt(formData.experience) : null,
+          consultationFee: formData.consultationFee && formData.consultationFee.trim() !== '' ? parseFloat(formData.consultationFee) : null,
+          availableDays: formData.availableDays.trim() || null,
+        };
+      case 'pharmacist':
+        return {
+          licenseNumber: formData.pharmacistLicenseNumber,
+        };
+      case 'lab_technician':
+        return {
+          licenseNumber: formData.labLicenseNumber || null,
+          specialization: formData.labSpecialization || null,
+        };
+      default:
+        return {};
+    }
   };
 
   const handleSubmit = async () => {
@@ -106,6 +188,8 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
           username: formData.username,
           password: formData.password,
           role: formData.role,
+          // Include role-specific data
+          roleSpecificData: getRoleSpecificData(),
         }),
       });
 
@@ -134,6 +218,23 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
           username: '',
           password: '',
           confirmPassword: '',
+          nic: '',
+          rfid: '',
+          dateOfBirth: '',
+          gender: '',
+          contactInfo: '',
+          address: '',
+          bloodType: '',
+          allergies: '',
+          specialization: '',
+          licenseNumber: '',
+          qualifications: '',
+          experience: '',
+          consultationFee: '',
+          availableDays: '',
+          pharmacistLicenseNumber: '',
+          labLicenseNumber: '',
+          labSpecialization: '',
         });
         setErrors({});
       } else {
@@ -177,6 +278,23 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
               username: '',
               password: '',
               confirmPassword: '',
+              nic: '',
+              rfid: '',
+              dateOfBirth: '',
+              gender: '',
+              contactInfo: '',
+              address: '',
+              bloodType: '',
+              allergies: '',
+              specialization: '',
+              licenseNumber: '',
+              qualifications: '',
+              experience: '',
+              consultationFee: '',
+              availableDays: '',
+              pharmacistLicenseNumber: '',
+              labLicenseNumber: '',
+              labSpecialization: '',
             });
             setErrors({});
           },
@@ -202,57 +320,6 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
       >
-        {/* Role Selection Card */}
-        <View style={styles.card}>
-          <RNText style={styles.cardTitle}>User Role</RNText>
-          <TouchableOpacity 
-            style={styles.roleSelector}
-            onPress={() => setShowRoleMenu(!showRoleMenu)}
-          >
-            <View style={styles.roleDisplay}>
-              <MaterialCommunityIcons 
-                name={selectedRole?.icon as any} 
-                size={24} 
-                color={selectedRole?.color} 
-              />
-              <RNText style={styles.roleText}>{selectedRole?.label}</RNText>
-            </View>
-            <Ionicons 
-              name={showRoleMenu ? "chevron-up" : "chevron-down"} 
-              size={20} 
-              color="#6B7280" 
-            />
-          </TouchableOpacity>
-
-          {showRoleMenu && (
-            <View style={styles.roleMenu}>
-              {roles.map((role) => (
-                <TouchableOpacity
-                  key={role.value}
-                  style={[
-                    styles.roleOption,
-                    formData.role === role.value && styles.roleOptionActive
-                  ]}
-                  onPress={() => {
-                    setFormData({ ...formData, role: role.value as any });
-                    setShowRoleMenu(false);
-                  }}
-                >
-                  <MaterialCommunityIcons 
-                    name={role.icon as any} 
-                    size={24} 
-                    color={role.color} 
-                  />
-                  <RNText style={styles.roleOptionText}>{role.label}</RNText>
-                  {formData.role === role.value && (
-                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-        </View>
-
         {/* Personal Information */}
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -355,6 +422,314 @@ export default function AdminAddUser({ onBack, onUserAdded }: AdminAddUserProps)
             </RNText>
           </View>
         </View>
+
+        {/* Role Selection Card */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <MaterialCommunityIcons name="shield-account" size={24} color="#8B5CF6" />
+            <RNText style={styles.cardTitle}>User Role</RNText>
+          </View>
+          
+          <TouchableOpacity 
+            style={styles.roleSelector}
+            onPress={() => setShowRoleMenu(!showRoleMenu)}
+          >
+            <View style={styles.roleDisplay}>
+              <MaterialCommunityIcons 
+                name={selectedRole?.icon as any} 
+                size={24} 
+                color={selectedRole?.color} 
+              />
+              <RNText style={styles.roleText}>{selectedRole?.label}</RNText>
+            </View>
+            <Ionicons 
+              name={showRoleMenu ? "chevron-up" : "chevron-down"} 
+              size={20} 
+              color="#6B7280" 
+            />
+          </TouchableOpacity>
+
+          {showRoleMenu && (
+            <View style={styles.roleMenu}>
+              {roles.map((role) => (
+                <TouchableOpacity
+                  key={role.value}
+                  style={[
+                    styles.roleOption,
+                    formData.role === role.value && styles.roleOptionActive
+                  ]}
+                  onPress={() => {
+                    setFormData({ ...formData, role: role.value as any });
+                    setShowRoleMenu(false);
+                  }}
+                >
+                  <MaterialCommunityIcons 
+                    name={role.icon as any} 
+                    size={24} 
+                    color={role.color} 
+                  />
+                  <RNText style={styles.roleOptionText}>{role.label}</RNText>
+                  {formData.role === role.value && (
+                    <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Role-Specific Information */}
+        {formData.role === 'patient' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="heart-pulse" size={24} color="#3B82F6" />
+              <RNText style={styles.cardTitle}>Patient Information</RNText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>NIC *</RNText>
+              <TextInput
+                style={[styles.inputContainer, errors.nic && styles.inputError]}
+                placeholder="e.g., 123456789V"
+                placeholderTextColor="#9CA3AF"
+                value={formData.nic}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, nic: text });
+                  if (errors.nic) setErrors({ ...errors, nic: '' });
+                }}
+              />
+              {errors.nic && <RNText style={styles.errorText}>{errors.nic}</RNText>}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>RFID *</RNText>
+              <TextInput
+                style={[styles.inputContainer, errors.rfid && styles.inputError]}
+                placeholder="e.g., RF123456"
+                placeholderTextColor="#9CA3AF"
+                value={formData.rfid}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, rfid: text });
+                  if (errors.rfid) setErrors({ ...errors, rfid: '' });
+                }}
+              />
+              {errors.rfid && <RNText style={styles.errorText}>{errors.rfid}</RNText>}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Date of Birth</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="YYYY-MM-DD"
+                placeholderTextColor="#9CA3AF"
+                value={formData.dateOfBirth}
+                onChangeText={(text) => setFormData({ ...formData, dateOfBirth: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Gender</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="Male, Female, Other"
+                placeholderTextColor="#9CA3AF"
+                value={formData.gender}
+                onChangeText={(text) => setFormData({ ...formData, gender: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Contact Info (Phone)</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="Enter phone number"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="phone-pad"
+                value={formData.contactInfo}
+                onChangeText={(text) => setFormData({ ...formData, contactInfo: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Address</RNText>
+              <TextInput
+                style={[styles.inputContainer, { height: 80 }]}
+                placeholder="Enter address"
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                value={formData.address}
+                onChangeText={(text) => setFormData({ ...formData, address: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Blood Type</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="e.g., A+, B-, O+, AB+"
+                placeholderTextColor="#9CA3AF"
+                value={formData.bloodType}
+                onChangeText={(text) => setFormData({ ...formData, bloodType: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Allergies</RNText>
+              <TextInput
+                style={[styles.inputContainer, { height: 80 }]}
+                placeholder="None, Penicillin, etc."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                value={formData.allergies}
+                onChangeText={(text) => setFormData({ ...formData, allergies: text })}
+              />
+            </View>
+          </View>
+        )}
+
+        {formData.role === 'doctor' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="stethoscope" size={24} color="#10B981" />
+              <RNText style={styles.cardTitle}>Doctor Information</RNText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Specialization *</RNText>
+              <TextInput
+                style={[styles.inputContainer, errors.specialization && styles.inputError]}
+                placeholder="e.g., Cardiology, Neurology"
+                placeholderTextColor="#9CA3AF"
+                value={formData.specialization}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, specialization: text });
+                  if (errors.specialization) setErrors({ ...errors, specialization: '' });
+                }}
+              />
+              {errors.specialization && <RNText style={styles.errorText}>{errors.specialization}</RNText>}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Medical License Number *</RNText>
+              <TextInput
+                style={[styles.inputContainer, errors.licenseNumber && styles.inputError]}
+                placeholder="e.g., MD12345"
+                placeholderTextColor="#9CA3AF"
+                value={formData.licenseNumber}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, licenseNumber: text });
+                  if (errors.licenseNumber) setErrors({ ...errors, licenseNumber: '' });
+                }}
+              />
+              {errors.licenseNumber && <RNText style={styles.errorText}>{errors.licenseNumber}</RNText>}
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Qualifications</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="e.g., MBBS, MD"
+                placeholderTextColor="#9CA3AF"
+                value={formData.qualifications}
+                onChangeText={(text) => setFormData({ ...formData, qualifications: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Years of Experience</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="Enter years of experience"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+                value={formData.experience}
+                onChangeText={(text) => setFormData({ ...formData, experience: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Consultation Fee</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="e.g., 5000.00"
+                placeholderTextColor="#9CA3AF"
+                keyboardType="numeric"
+                value={formData.consultationFee}
+                onChangeText={(text) => setFormData({ ...formData, consultationFee: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Available Days</RNText>
+              <TextInput
+                style={[styles.inputContainer, { height: 80 }]}
+                placeholder='e.g., ["Monday","Wednesday","Friday"]'
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={3}
+                value={formData.availableDays}
+                onChangeText={(text) => setFormData({ ...formData, availableDays: text })}
+              />
+            </View>
+          </View>
+        )}
+
+        {formData.role === 'pharmacist' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="pill" size={24} color="#8B5CF6" />
+              <RNText style={styles.cardTitle}>Pharmacist Information</RNText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Pharmacy License Number *</RNText>
+              <TextInput
+                style={[styles.inputContainer, errors.pharmacistLicenseNumber && styles.inputError]}
+                placeholder="Enter pharmacy license number"
+                placeholderTextColor="#9CA3AF"
+                value={formData.pharmacistLicenseNumber}
+                onChangeText={(text) => {
+                  setFormData({ ...formData, pharmacistLicenseNumber: text });
+                  if (errors.pharmacistLicenseNumber) setErrors({ ...errors, pharmacistLicenseNumber: '' });
+                }}
+              />
+              {errors.pharmacistLicenseNumber && <RNText style={styles.errorText}>{errors.pharmacistLicenseNumber}</RNText>}
+            </View>
+          </View>
+        )}
+
+        {formData.role === 'lab_technician' && (
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <MaterialCommunityIcons name="flask" size={24} color="#F59E0B" />
+              <RNText style={styles.cardTitle}>Lab Technician Information</RNText>
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Specialization</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="e.g., Microbiology, Hematology"
+                placeholderTextColor="#9CA3AF"
+                value={formData.labSpecialization}
+                onChangeText={(text) => setFormData({ ...formData, labSpecialization: text })}
+              />
+            </View>
+
+            <View style={styles.inputGroup}>
+              <RNText style={styles.label}>Lab License Number</RNText>
+              <TextInput
+                style={styles.inputContainer}
+                placeholder="Enter lab license number"
+                placeholderTextColor="#9CA3AF"
+                value={formData.labLicenseNumber}
+                onChangeText={(text) => setFormData({ ...formData, labLicenseNumber: text })}
+              />
+            </View>
+          </View>
+        )}
 
         {/* Action Buttons */}
         <View style={styles.actionButtons}>

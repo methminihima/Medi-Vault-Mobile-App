@@ -3,19 +3,19 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    ImageBackground,
-    Modal,
-    Platform,
-    RefreshControl,
-    Text as RNText,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  ImageBackground,
+  Modal,
+  Platform,
+  RefreshControl,
+  Text as RNText,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import Animated from 'react-native-reanimated';
 import AssignedTests from '../../components/lab-technician/AssignedTests';
@@ -23,7 +23,6 @@ import FlagAbnormalResults from '../../components/lab-technician/FlagAbnormalRes
 import ManageNotifications from '../../components/lab-technician/ManageNotifications';
 import TestHistory from '../../components/lab-technician/TestHistory';
 import UploadResults from '../../components/lab-technician/UploadResults';
-import AppointmentsView from '../../components/shared/AppointmentsView';
 import { sessionService } from '../../src/services/sessionService';
 import { storageService } from '../../src/services/storageService';
 import { useFadeIn, useStaggerAnimation } from '../../utils/animations';
@@ -808,7 +807,11 @@ export default function LabTechnicianDashboard() {
         {activeNav === 'flag-abnormal' && <FlagAbnormalResults />}
         {activeNav === 'notifications' && <ManageNotifications showBackground={false} />}
         {activeNav === 'history' && <TestHistory />}
-        {activeNav === 'appointments' && <AppointmentsView userRole="lab_technician" userId={userInfo?.id} />}
+        {activeNav === 'appointments' && (
+          <View style={styles.contentArea}>
+            <RNText style={styles.comingSoonText}>Appointments - Coming Soon</RNText>
+          </View>
+        )}
         
         {/* Inventory Management */}
         {activeNav === 'inventory' && (
@@ -2217,6 +2220,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     letterSpacing: 0.2,
+  },
+  contentArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });
 

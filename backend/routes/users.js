@@ -172,6 +172,79 @@ router.post(
 
       const newUser = result.rows[0];
 
+      // Insert role-specific data if provided
+      const { roleSpecificData } = req.body;
+      if (roleSpecificData && Object.keys(roleSpecificData).length > 0) {
+        try {
+          if (role === 'patient') {
+            await query(
+              `INSERT INTO patients 
+              (id, user_id, nic, health_id, rfid, date_of_birth, gender, contact_info, address, blood_type, allergies, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [
+                crypto.randomUUID(),
+                newUser.id,
+                roleSpecificData.nic || null,
+                null, // health_id - not provided in form
+                roleSpecificData.rfid || null,
+                roleSpecificData.dateOfBirth || null,
+                roleSpecificData.gender || null,
+                roleSpecificData.contactInfo || null,
+                roleSpecificData.address || null,
+                roleSpecificData.bloodType || null,
+                roleSpecificData.allergies || null,
+              ]
+            );
+          } else if (role === 'doctor') {
+            // Parse and validate doctor-specific data
+            const experience = roleSpecificData.experience ? parseInt(roleSpecificData.experience) : null;
+            const consultationFee = roleSpecificData.consultationFee ? parseFloat(roleSpecificData.consultationFee) : null;
+            
+            await query(
+              `INSERT INTO doctors 
+              (id, user_id, specialization, license_number, qualifications, experience, consultation_fee, available_days, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [
+                crypto.randomUUID(),
+                newUser.id,
+                roleSpecificData.specialization,
+                roleSpecificData.licenseNumber,
+                roleSpecificData.qualifications && roleSpecificData.qualifications.trim() !== '' ? roleSpecificData.qualifications : null,
+                experience,
+                consultationFee,
+                roleSpecificData.availableDays && roleSpecificData.availableDays.trim() !== '' ? roleSpecificData.availableDays : null,
+              ]
+            );
+          } else if (role === 'pharmacist') {
+            await query(
+              `INSERT INTO pharmacists 
+              (id, user_id, license_number, created_at, updated_at)
+              VALUES ($1, $2, $3, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [
+                crypto.randomUUID(),
+                newUser.id,
+                roleSpecificData.licenseNumber,
+              ]
+            );
+          } else if (role === 'lab_technician') {
+            await query(
+              `INSERT INTO lab_technicians 
+              (id, user_id, specialization, license_number, created_at, updated_at)
+              VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`,
+              [
+                crypto.randomUUID(),
+                newUser.id,
+                roleSpecificData.specialization || null,
+                roleSpecificData.licenseNumber || null,
+              ]
+            );
+          }
+        } catch (roleError) {
+          console.error('Error inserting role-specific data:', roleError);
+          // Don't fail the entire user creation, but log the error
+        }
+      }
+
       // Best-effort: emit notifications (requires notifications table)
       try {
         await emitUserCreatedNotifications({
@@ -434,6 +507,26 @@ router.delete('/:id', async (req, res) => {
     const fullName = `${userRow.first_name || ''} ${userRow.last_name || ''}`.trim();
     const username = userRow.username;
     const role = userRow.role;
+
+    // Delete role-specific data first to avoid foreign key constraint errors
+    try {
+      if (role === 'patient') {
+        await query('DELETE FROM patients WHERE user_id = $1', [id]);
+      } else if (role === 'doctor') {
+        await query('DELETE FROM doctors WHERE user_id = $1', [id]);
+      } else if (role === 'pharmacist') {
+        await query('DELETE FROM pharmacists WHERE user_id = $1', [id]);
+      } else if (role === 'lab_technician') {
+        await query('DELETE FROM lab_technicians WHERE user_id = $1', [id]);
+      }
+    } catch (e) {
+      console.error('Failed to delete role-specific data for user:', e);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to delete user role data',
+        error: e.message,
+      });
+    }
 
     // IMPORTANT: delete dependent notifications first to avoid FK constraint errors
     // (Some schemas create a foreign key from notifications.recipient_id -> users.id)

@@ -1,20 +1,20 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    ImageBackground,
-    Modal,
-    Platform,
-    RefreshControl,
-    Text as RNText,
-    ScrollView,
-    StyleSheet,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  ImageBackground,
+  Modal,
+  Platform,
+  RefreshControl,
+  Text as RNText,
+  ScrollView,
+  StyleSheet,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import CreateMedicalRecord from '../../components/doctor/CreateMedicalRecord';
 import CreatePrescription from '../../components/doctor/CreatePrescription';
@@ -24,6 +24,7 @@ import DPatientModals from '../../components/doctor/DPatientModals';
 import DPatients from '../../components/doctor/DPatients';
 import OrderLabTest from '../../components/doctor/OrderLabTest';
 import ManageNotifications from '../../components/lab-technician/ManageNotifications';
+import { API_BASE_URL } from '../../src/config/constants';
 import { sessionService } from '../../src/services/sessionService';
 import { storageService } from '../../src/services/storageService';
 // Animation imports removed - dashboard cards don't need animations for better performance
@@ -35,15 +36,32 @@ const isTablet = width >= 768;
 interface Appointment {
   id: string;
   patientName: string;
-  patientNIC: string;
+  patientNIC?: string;
+  patientDbId?: string;
   time: string;
   type: string;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled' | 'cancel_requested';
   cancellationReason?: string;
+  cancellationRejectedReason?: string;
+  appointment_date?: string;
+  created_at?: string;
 }
+
+type AppointmentContext = {
+  appointmentId: string;
+  patientDbId?: string;
+  patientName?: string;
+  patientNIC?: string;
+};
+
+type CompletionArtifacts = {
+  prescriptionId?: string;
+  labTestIds?: string[];
+};
 
 interface Patient {
   id: string;
+  patientId?: string;
   name: string;
   nic: string;
   healthId: string;
@@ -51,6 +69,10 @@ interface Patient {
   gender: string;
   phone: string;
   lastVisit: string;
+  email?: string;
+  rfid?: string;
+  dateOfBirth?: string;
+  address?: string;
 }
 
 interface MedicalRecord {
@@ -97,8 +119,7 @@ export default function DoctorDashboard() {
   const [menuOpen, setMenuOpen] = useState(false);
   
   // Search & Filter
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchType, setSearchType] = useState<'nic' | 'healthId' | 'name'>('name');
+  // (Patient verification UI manages its own inputs)
   
   // Modals
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -108,29 +129,72 @@ export default function DoctorDashboard() {
   const [showPatientDashboardModal, setShowPatientDashboardModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+
+  const [autoOpenCompleteAppointmentId, setAutoOpenCompleteAppointmentId] = useState<string | null>(null);
+  const [prescriptionContext, setPrescriptionContext] = useState<AppointmentContext | null>(null);
+  const [labTestContext, setLabTestContext] = useState<AppointmentContext | null>(null);
+  const [completionArtifactsByAppointmentId, setCompletionArtifactsByAppointmentId] = useState<Record<string, CompletionArtifacts>>({});
   
   // Stats
   const [stats, setStats] = useState<DashboardStats>({
-    todayAppointments: 8,
-    pendingAppointments: 3,
-    totalPatients: 156,
-    prescriptionsIssued: 45,
+    todayAppointments: 0,
+    pendingAppointments: 0,
+    totalPatients: 0,
+    prescriptionsIssued: 0,
   });
 
   // ANIMATIONS REMOVED FOR BETTER PERFORMANCE
   // Dashboard elements should not animate on every render
 
-  // Sample Data
-  const [appointments, setAppointments] = useState<Appointment[]>([
-    { id: '1', patientName: 'John Doe', patientNIC: '123456789V', time: '09:00 AM', type: 'Consultation', status: 'pending' },
-    { id: '2', patientName: 'Jane Smith', patientNIC: '987654321V', time: '10:30 AM', type: 'Follow-up', status: 'confirmed' },
-    { id: '3', patientName: 'Mike Johnson', patientNIC: '456789123V', time: '02:00 PM', type: 'Emergency', status: 'pending' },
-  ]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const shownCancellationRejectionsRef = useRef<Set<string>>(new Set());
 
   const [patients, setPatients] = useState<Patient[]>([
-    { id: '1', name: 'John Doe', nic: '123456789V', healthId: 'HID001', age: 45, gender: 'Male', phone: '0771234567', lastVisit: '2024-11-20' },
-    { id: '2', name: 'Jane Smith', nic: '987654321V', healthId: 'HID002', age: 32, gender: 'Female', phone: '0779876543', lastVisit: '2024-11-22' },
-    { id: '3', name: 'Mike Johnson', nic: '456789123V', healthId: 'HID003', age: 28, gender: 'Male', phone: '0774567890', lastVisit: '2024-11-25' },
+    {
+      id: '1',
+      patientId: 'MV-P-001',
+      name: 'John Doe',
+      nic: '199012345678',
+      healthId: 'HID001',
+      age: 35,
+      gender: 'Male',
+      phone: '+94771234567',
+      lastVisit: '2024-11-20',
+      email: 'john.doe@email.com',
+      rfid: 'RFID-001',
+      dateOfBirth: '1990-05-15',
+      address: 'No 125 / Galle Road, Colombo 03, Sri Lanka',
+    },
+    {
+      id: '2',
+      patientId: 'MV-P-002',
+      name: 'Jane Smith',
+      nic: '199612345678',
+      healthId: 'HID002',
+      age: 29,
+      gender: 'Female',
+      phone: '+94779876543',
+      lastVisit: '2024-11-22',
+      email: 'jane.smith@email.com',
+      rfid: 'RFID-002',
+      dateOfBirth: '1996-04-01',
+      address: 'No 18 / Kandy Road, Kandy, Sri Lanka',
+    },
+    {
+      id: '3',
+      patientId: 'MV-P-003',
+      name: 'Mike Johnson',
+      nic: '199802345678',
+      healthId: 'HID003',
+      age: 27,
+      gender: 'Male',
+      phone: '+94774567890',
+      lastVisit: '2024-11-25',
+      email: 'mike.johnson@email.com',
+      rfid: 'RFID-003',
+      dateOfBirth: '1998-01-12',
+      address: 'No 77 / Main Street, Galle, Sri Lanka',
+    },
   ]);
 
   // Medical Record Form
@@ -158,10 +222,176 @@ export default function DoctorDashboard() {
     loadDashboardData();
   }, []); // Removed animation triggers for better performance
 
+  const formatTime = (timeLike: string) => {
+    const t = String(timeLike ?? '').trim();
+    if (!t) return '';
+    const hhmm = t.slice(0, 5);
+    const [hhRaw, mmRaw] = hhmm.split(':');
+    const hh = Number(hhRaw);
+    const mm = Number(mmRaw);
+    if (Number.isNaN(hh) || Number.isNaN(mm)) return t;
+    const ampm = hh >= 12 ? 'PM' : 'AM';
+    const h12 = ((hh + 11) % 12) + 1;
+    return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
+  };
+
+  const fetchDoctorAppointments = async (doctorUserId: string | number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/appointments?doctor_id=${encodeURIComponent(String(doctorUserId))}`, {
+        headers: { Accept: 'application/json' },
+      });
+
+      const rawText = await res.text();
+      const json = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!res.ok || !json?.success) return [] as Appointment[];
+
+      const rows = Array.isArray(json.data) ? json.data : [];
+      const mapped: Appointment[] = rows.map((a: any) => {
+        const patientName = `${String(a?.patient_first_name ?? '').trim()} ${String(a?.patient_last_name ?? '').trim()}`.trim() || 'Patient';
+        return {
+          id: String(a?.id ?? ''),
+          patientName,
+          patientNIC: a?.patient_nic ? String(a.patient_nic) : undefined,
+          patientDbId: a?.patient_id != null ? String(a.patient_id) : undefined,
+          time: formatTime(String(a?.appointment_time ?? '')),
+          type: String(a?.reason ?? 'Appointment'),
+          status: (String(a?.status ?? 'pending').toLowerCase() as Appointment['status']) || 'pending',
+          cancellationReason: a?.cancellation_reason ? String(a.cancellation_reason) : a?.notes ? String(a.notes) : undefined,
+          cancellationRejectedReason: a?.cancellation_rejected_reason ? String(a.cancellation_rejected_reason) : undefined,
+          appointment_date: a?.appointment_date ? String(a.appointment_date) : undefined,
+          created_at: a?.created_at ? String(a.created_at) : undefined,
+        };
+      });
+      setAppointments(mapped);
+
+      return mapped;
+
+    } catch (e) {
+      // best-effort
+      console.log('Failed to fetch doctor appointments:', e);
+      return [] as Appointment[];
+    }
+  };
+
+  const fetchDoctorPrescriptionsCount = async (doctorUserId: string | number) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/prescriptions?doctorId=${encodeURIComponent(String(doctorUserId))}`, {
+        headers: { Accept: 'application/json' },
+      });
+
+      const rawText = await res.text();
+      const json = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!res.ok || !json?.success || !Array.isArray(json?.data)) return 0;
+      return json.data.length;
+    } catch (e) {
+      return 0;
+    }
+  };
+
+  const updateAppointmentStatus = async (
+    appointmentId: string,
+    nextStatus: Appointment['status'],
+    opts?: { cancellationReason?: string; actualVisitTime?: string; visitNotes?: string }
+  ) => {
+    try {
+      const payload: any = { status: nextStatus, user_id: userInfo?.id };
+      if (nextStatus === 'cancel_requested' && opts?.cancellationReason) {
+        payload.cancellation_reason = opts.cancellationReason;
+      }
+      if (nextStatus === 'completed') {
+        if (opts?.actualVisitTime) payload.actual_visit_time = String(opts.actualVisitTime);
+        if (opts?.visitNotes) payload.visit_notes = String(opts.visitNotes);
+      }
+      const res = await fetch(`${API_BASE_URL}/appointments/${encodeURIComponent(appointmentId)}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const rawText = await res.text();
+      const json = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.message || 'Failed to update appointment');
+      }
+
+      setAppointments((prev) =>
+        prev.map((a) =>
+          a.id === appointmentId
+            ? {
+                ...a,
+                status: nextStatus,
+                cancellationReason:
+                  nextStatus === 'cancel_requested' ? (opts?.cancellationReason || a.cancellationReason) : a.cancellationReason,
+              }
+            : a
+        )
+      );
+      setSelectedAppointment((prev) =>
+        prev && prev.id === appointmentId
+          ? {
+              ...prev,
+              status: nextStatus,
+              cancellationReason:
+                nextStatus === 'cancel_requested'
+                  ? (opts?.cancellationReason || prev.cancellationReason)
+                  : prev.cancellationReason,
+            }
+          : prev
+      );
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to update appointment');
+    }
+  };
+
   const loadDashboardData = async () => {
     try {
       const user = await storageService.getUser();
       setUserInfo(user);
+      if (user?.id != null) {
+        const [appts, prescriptionsIssued] = await Promise.all([
+          fetchDoctorAppointments(user.id),
+          fetchDoctorPrescriptionsCount(user.id),
+        ]);
+
+        const today = new Date().toISOString().slice(0, 10);
+        const toDateOnly = (v?: string) => {
+          if (!v) return '';
+          const s = String(v);
+          return s.includes('T') ? s.slice(0, 10) : s.slice(0, 10);
+        };
+
+        const todayAppointments = appts.filter((a) => toDateOnly(a.appointment_date) === today).length;
+        const pendingAppointments = appts.filter((a) => a.status === 'pending').length;
+        const totalPatients = new Set(appts.map((a) => a.patientDbId).filter(Boolean)).size;
+
+        setStats({
+          todayAppointments,
+          pendingAppointments,
+          totalPatients,
+          prescriptionsIssued,
+        });
+      }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -290,20 +520,6 @@ export default function DoctorDashboard() {
     }
   };
 
-  const filteredPatients = patients.filter(patient => {
-    if (!searchQuery) return true;
-    const query = searchQuery.toLowerCase();
-    switch (searchType) {
-      case 'nic':
-        return patient.nic.toLowerCase().includes(query);
-      case 'healthId':
-        return patient.healthId.toLowerCase().includes(query);
-      case 'name':
-      default:
-        return patient.name.toLowerCase().includes(query);
-    }
-  });
-
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
@@ -317,25 +533,33 @@ export default function DoctorDashboard() {
       {/* Stats Grid - Animations removed for performance */}
       <View style={styles.statsGrid}>
         <View style={[styles.statCard, styles.whiteCard]}>
-          <MaterialCommunityIcons name="calendar-today" size={28} color="#1E4BA3" />
+          <View style={[styles.statIconContainer, { backgroundColor: '#3B82F615' }]}>
+            <MaterialCommunityIcons name="calendar-today" size={28} color="#3B82F6" />
+          </View>
           <RNText style={styles.statNumberTransparent}>{stats.todayAppointments}</RNText>
           <RNText style={styles.statLabelTransparent}>Today's Appointments</RNText>
         </View>
 
         <View style={[styles.statCard, styles.whiteCard]}>
-          <Ionicons name="time-outline" size={28} color="#1E4BA3" />
+          <View style={[styles.statIconContainer, { backgroundColor: '#F59E0B15' }]}>
+            <Ionicons name="time-outline" size={28} color="#F59E0B" />
+          </View>
           <RNText style={styles.statNumberTransparent}>{stats.pendingAppointments}</RNText>
           <RNText style={styles.statLabelTransparent}>Pending</RNText>
         </View>
 
         <View style={[styles.statCard, styles.whiteCard]}>
-          <MaterialCommunityIcons name="account-group" size={28} color="#1E4BA3" />
+          <View style={[styles.statIconContainer, { backgroundColor: '#10B98115' }]}>
+            <MaterialCommunityIcons name="account-group" size={28} color="#10B981" />
+          </View>
           <RNText style={styles.statNumberTransparent}>{stats.totalPatients}</RNText>
           <RNText style={styles.statLabelTransparent}>Total Patients</RNText>
         </View>
 
         <View style={[styles.statCard, styles.whiteCard]}>
-          <MaterialCommunityIcons name="pill" size={28} color="#1E4BA3" />
+          <View style={[styles.statIconContainer, { backgroundColor: '#8B5CF615' }]}>
+            <MaterialCommunityIcons name="pill" size={28} color="#8B5CF6" />
+          </View>
           <RNText style={styles.statNumberTransparent}>{stats.prescriptionsIssued}</RNText>
           <RNText style={styles.statLabelTransparent}>Prescriptions</RNText>
         </View>
@@ -347,42 +571,54 @@ export default function DoctorDashboard() {
         <View style={styles.quickActionsGrid}>
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('appointments')}>
-              <MaterialCommunityIcons name="calendar-check" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#3B82F615' }]}>
+                <MaterialCommunityIcons name="calendar-check" size={32} color="#3B82F6" />
+              </View>
               <RNText style={styles.quickActionText}>Appointments</RNText>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('patients')}>
-              <MaterialCommunityIcons name="account-search" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#10B98115' }]}>
+                <MaterialCommunityIcons name="account-search" size={32} color="#10B981" />
+              </View>
               <RNText style={styles.quickActionText}>Search Patients</RNText>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('create-medical-record')}>
-              <MaterialCommunityIcons name="clipboard-text" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#8B5CF615' }]}>
+                <MaterialCommunityIcons name="clipboard-text" size={32} color="#8B5CF6" />
+              </View>
               <RNText style={styles.quickActionText}>Create Medical Record</RNText>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('create-prescription')}>
-              <MaterialCommunityIcons name="prescription" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#F59E0B15' }]}>
+                <MaterialCommunityIcons name="prescription" size={32} color="#F59E0B" />
+              </View>
               <RNText style={styles.quickActionText}>Create Prescription</RNText>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('order-lab-tests')}>
-              <MaterialCommunityIcons name="test-tube" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#8B5CF615' }]}>
+                <MaterialCommunityIcons name="test-tube" size={32} color="#8B5CF6" />
+              </View>
               <RNText style={styles.quickActionText}>Order Lab Tests</RNText>
             </TouchableOpacity>
           </View>
 
           <View>
             <TouchableOpacity style={styles.quickActionCard} onPress={() => setActiveTab('messages')}>
-              <MaterialCommunityIcons name="message-text" size={32} color="#1E4BA3" />
+              <View style={[styles.statIconContainer, { backgroundColor: '#3B82F615' }]}>
+                <MaterialCommunityIcons name="message-text" size={32} color="#3B82F6" />
+              </View>
               <RNText style={styles.quickActionText}>Messages</RNText>
             </TouchableOpacity>
           </View>
@@ -428,13 +664,13 @@ export default function DoctorDashboard() {
 
   return (
     <View style={styles.container}>
-      <StatusBar style="dark" />
+      <StatusBar style="light" />
       <ImageBackground
         source={require('../../assets/images/Background-image.jpg')}
         style={styles.background}
         resizeMode="cover"
       >
-        <View style={styles.overlay} />
+        <View style={styles.gradientOverlay} />
         
         {/* Header - Animation removed for performance */}
         <View style={styles.header}>
@@ -623,9 +859,49 @@ export default function DoctorDashboard() {
           showsVerticalScrollIndicator={false}
         >
           {activeTab === 'overview' && renderOverview()}
-          {activeTab === 'create-prescription' && <CreatePrescription />}
+          {activeTab === 'create-prescription' && (
+            <CreatePrescription
+              patientId={prescriptionContext?.patientDbId}
+              appointmentId={prescriptionContext?.appointmentId}
+              onSaved={(result) => {
+                const apptId = prescriptionContext?.appointmentId;
+                if (apptId) {
+                  setCompletionArtifactsByAppointmentId((prev) => ({
+                    ...prev,
+                    [apptId]: {
+                      ...(prev[apptId] || {}),
+                      prescriptionId: result?.id ? String(result.id) : (prev[apptId]?.prescriptionId || undefined),
+                    },
+                  }));
+                }
+                setActiveTab('appointments');
+                setAutoOpenCompleteAppointmentId(apptId || null);
+              }}
+            />
+          )}
           {activeTab === 'create-medical-record' && <CreateMedicalRecord />}
-          {activeTab === 'order-lab-tests' && <OrderLabTest />}
+          {activeTab === 'order-lab-tests' && (
+            <OrderLabTest
+              patientId={labTestContext?.patientDbId}
+              appointmentId={labTestContext?.appointmentId}
+              doctorId={userInfo?.id}
+              onSaved={(result) => {
+                const apptId = labTestContext?.appointmentId;
+                const ids = Array.isArray(result?.ids) ? result.ids.map((x: any) => String(x)) : [];
+                if (apptId) {
+                  setCompletionArtifactsByAppointmentId((prev) => ({
+                    ...prev,
+                    [apptId]: {
+                      ...(prev[apptId] || {}),
+                      labTestIds: ids.length ? ids : (prev[apptId]?.labTestIds || undefined),
+                    },
+                  }));
+                }
+                setActiveTab('appointments');
+                setAutoOpenCompleteAppointmentId(apptId || null);
+              }}
+            />
+          )}
           {activeTab === 'appointments' && (
             <DAppointments
               appointments={appointments}
@@ -633,16 +909,31 @@ export default function DoctorDashboard() {
               showAppointmentModal={showAppointmentModal}
               setShowAppointmentModal={setShowAppointmentModal}
               handleViewAppointment={handleViewAppointment}
+              onApprove={(id) => updateAppointmentStatus(id, 'confirmed')}
+              onMarkComplete={(id, meta) =>
+                updateAppointmentStatus(id, 'completed', {
+                  actualVisitTime: meta?.actualVisitTime,
+                  visitNotes: meta?.visitNotes,
+                })
+              }
+              onRequestCancel={(id, reason) => updateAppointmentStatus(id, 'cancel_requested', { cancellationReason: reason })}
+              completionArtifactsByAppointmentId={completionArtifactsByAppointmentId}
+              onOpenCreatePrescription={(ctx) => {
+                setPrescriptionContext(ctx);
+                setActiveTab('create-prescription');
+              }}
+              onOpenOrderLabTests={(ctx) => {
+                setLabTestContext(ctx);
+                setActiveTab('order-lab-tests');
+              }}
+              onOpenCreateMedicalRecord={() => setActiveTab('create-medical-record')}
+              autoOpenCompleteAppointmentId={autoOpenCompleteAppointmentId}
+              onAutoOpenCompleteHandled={() => setAutoOpenCompleteAppointmentId(null)}
             />
           )}
           {activeTab === 'patients' && (
             <DPatients
               patients={patients}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              searchType={searchType}
-              setSearchType={setSearchType}
-              handleViewPatient={handleViewPatient}
             />
           )}
           {activeTab === 'messages' && <DMessages />}
@@ -756,9 +1047,9 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
   },
-  overlay: {
+  gradientOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(98, 216, 245, 0.2)',
+    backgroundColor: 'rgba(147, 197, 253, 0.2)',
   },
   header: {
     flexDirection: 'row',
@@ -792,14 +1083,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   greeting: {
-    fontSize: isSmallScreen ? 14 : 16,
-    color: '#fff',
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
     fontWeight: '500',
   },
   userName: {
-    fontSize: isSmallScreen ? 18 : 20,
-    fontWeight: '700',
+    fontSize: 20,
     color: '#fff',
+    fontWeight: '700',
     marginTop: 4,
   },
   doctorName: {
@@ -917,10 +1208,17 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
   },
   navContainer: {
-    backgroundColor: Platform.select({
-      ios: 'rgba(255, 255, 255, 0.95)',
-      android: '#FFFFFF',
-      default: '#FFFFFF',
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        shadowOffset: { width: 0, height: 2 },
+      },
+      android: { elevation: 2 },
     }),
   },
   navScrollContent: {
@@ -994,15 +1292,27 @@ const styles = StyleSheet.create({
   statCard: {
     flex: 1,
     minWidth: isSmallScreen ? '47%' : '47%',
-    backgroundColor: '#10B981',
+    backgroundColor: '#fff',
     borderRadius: 16,
-    padding: isSmallScreen ? 16 : 20,
+    padding: 16,
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 10,
+        shadowOffset: { width: 0, height: 4 },
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  statIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
   },
   transparentCard: {
     backgroundColor: 'rgba(255, 255, 255, 0.3)',
@@ -1071,17 +1381,21 @@ const styles = StyleSheet.create({
   },
   quickActionCard: {
     width: isTablet ? (width - 80) / 3 - 8 : (width - 64) / 3 - 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: isSmallScreen ? 12 : 16,
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+      },
+      android: { elevation: 3 },
+    }),
     minHeight: isSmallScreen ? 100 : 110,
   },
   quickActionText: {
@@ -1094,15 +1408,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOpacity: 0.08,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+      },
+      android: { elevation: 3 },
+    }),
   },
   appointmentLeft: {
     flexDirection: 'row',

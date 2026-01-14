@@ -3,24 +3,23 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    ImageBackground,
-    Modal,
-    Platform,
-    RefreshControl,
-    Text as RNText,
-    ScrollView,
-    StyleSheet,
-    TextInput,
-    TouchableOpacity,
-    View
+  ActivityIndicator,
+  Alert,
+  Dimensions,
+  ImageBackground,
+  Modal,
+  Platform,
+  RefreshControl,
+  Text as RNText,
+  ScrollView,
+  StyleSheet,
+  TextInput,
+  TouchableOpacity,
+  View
 } from 'react-native';
 import ManageNotifications from '../../components/lab-technician/ManageNotifications';
 import DispensingHistory from '../../components/pharmacist/DispensingHistory';
 import QRScanner from '../../components/pharmacist/QRScanner';
-import AppointmentsView from '../../components/shared/AppointmentsView';
 import { sessionService } from '../../src/services/sessionService';
 import { storageService } from '../../src/services/storageService';
 // Animation imports removed - dashboard cards don't need animations for better performance
@@ -742,7 +741,9 @@ export default function PharmacistDashboardScreen() {
         ) : activeNav === 'history' ? (
           <DispensingHistory />
         ) : activeNav === 'appointments' ? (
-          <AppointmentsView userRole="pharmacist" userId={pharmacistUser?.id} />
+          <View style={styles.contentArea}>
+            <RNText style={styles.comingSoonText}>Appointments - Coming Soon</RNText>
+          </View>
         ) : (
           <ScrollView
             style={styles.content}
@@ -1562,6 +1563,17 @@ const styles = StyleSheet.create({
   bottomNavTextActive: {
     color: '#FFFFFF',
     fontWeight: '600',
+  },
+  contentArea: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  comingSoonText: {
+    fontSize: 16,
+    color: '#6B7280',
+    textAlign: 'center',
   },
 });
 

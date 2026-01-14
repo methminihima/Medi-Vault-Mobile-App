@@ -29,3 +29,6 @@ declare module '*.svg' {
   const value: any;
   export default value;
 }
+
+declare module 'expo-print';
+declare module 'expo-sharing';

@@ -18,13 +18,14 @@ import {
 } from 'react-native';
 import AdminAddUser from '../../components/admin/AdminAddUser';
 import AdminAppointments from '../../components/admin/AdminAppointments';
-import AdminDoctors from '../../components/admin/AdminDoctors';
+import AdminDoctorsRegistry from '../../components/admin/AdminDoctorsRegistry';
 import AdminMessages from '../../components/admin/AdminMessages';
 import AdminNotifications from '../../components/admin/AdminNotifications';
 import AdminPatients from '../../components/admin/AdminPatients';
 import AdminReports from '../../components/admin/AdminReports';
 import AdminSettings from '../../components/admin/AdminSettings';
 import AdminUserManagement from '../../components/admin/AdminUserManagement';
+import { notificationsApi } from '../../src/api/notifications';
 import { API_BASE_URL } from '../../src/config/constants';
 import { sessionService } from '../../src/services/sessionService';
 import { storageService } from '../../src/services/storageService';
@@ -53,6 +54,50 @@ interface RecentActivity {
   color: string;
 }
 
+function formatTimeAgo(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const diffMs = Date.now() - d.getTime();
+  const sec = Math.floor(diffMs / 1000);
+  if (sec < 60) return `${sec}s ago`;
+  const min = Math.floor(sec / 60);
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  return `${days}d ago`;
+}
+
+function notificationToRecentActivity(n: any): RecentActivity {
+  const type = String(n?.type || 'system');
+  const title = String(n?.title || 'Activity');
+  const message = String(n?.message || '');
+  const createdAt = String(n?.createdAt || n?.created_at || '');
+  const metaEvent = String(n?.metadata?.event || '').toLowerCase();
+
+  const description = message ? `${title} - ${message}` : title;
+  const time = createdAt ? formatTimeAgo(createdAt) : '';
+
+  // Keep a simple, readable mapping that matches the existing card UI.
+  if (metaEvent.includes('appointment') || type === 'appointment') {
+    return { id: String(n?.id), type, description, time, icon: 'calendar-check', color: '#3B82F6' };
+  }
+  if (metaEvent.includes('prescription') || type === 'prescription') {
+    return { id: String(n?.id), type, description, time, icon: 'prescription', color: '#10B981' };
+  }
+  if (metaEvent.includes('lab') || metaEvent.includes('test') || type === 'lab') {
+    return { id: String(n?.id), type, description, time, icon: 'flask', color: '#8B5CF6' };
+  }
+  if (metaEvent.includes('user') || type === 'user') {
+    return { id: String(n?.id), type, description, time, icon: 'account-plus', color: '#10B981' };
+  }
+  if (type === 'alert') {
+    return { id: String(n?.id), type, description, time, icon: 'alert-circle', color: '#F59E0B' };
+  }
+
+  return { id: String(n?.id), type, description, time, icon: 'cloud-check', color: '#8B5CF6' };
+}
+
 export default function AdminDashboardScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -67,43 +112,21 @@ export default function AdminDashboardScreen() {
     totalPatients: 0,
     totalPharmacists: 0,
     totalLabTechnicians: 0,
-    activeSessions: 342,
-    pendingApprovals: 15
+    activeSessions: 0,
+    pendingApprovals: 0
   });
 
   // Slow animations (600-1000ms)
   // ANIMATIONS REMOVED FOR BETTER PERFORMANCE
 
-  const [recentActivities] = useState<RecentActivity[]>([
-    {
-      id: '1',
-      type: 'user_registration',
-      description: 'New doctor registered - Dr. Sarah Johnson',
-      time: '5 minutes ago',
-      icon: 'account-plus',
-      color: '#10B981'
-    },
-    {
-      id: '3',
-      type: 'system',
-      description: 'System backup completed successfully',
-      time: '1 hour ago',
-      icon: 'cloud-check',
-      color: '#8B5CF6'
-    },
-    {
-      id: '4',
-      type: 'approval',
-      description: 'Pending doctor verification - Dr. Mike Wilson',
-      time: '2 hours ago',
-      icon: 'alert-circle',
-      color: '#F59E0B'
-    }
-  ]);
+  const [recentActivities, setRecentActivities] = useState<RecentActivity[]>([]);
+  const [recentActivityLoading, setRecentActivityLoading] = useState(false);
 
   useEffect(() => {
     loadAdminData();
     refreshUserStats();
+    void refreshSystemStatus();
+    void refreshRecentActivity();
   }, []);
 
   const normalizeRole = (roleRaw: unknown) =>
@@ -155,6 +178,41 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  const refreshSystemStatus = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/reports/system-status`, {
+        headers: {
+          Accept: 'application/json',
+        },
+      });
+
+      const rawText = await res.text();
+      const json = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!res.ok || !json?.success || !json?.data) {
+        return;
+      }
+
+      const activeSessions = Number(json.data.activeSessions) || 0;
+      const pendingApprovals = Number(json.data.pendingApprovals) || 0;
+
+      setStats((prev) => ({
+        ...prev,
+        activeSessions,
+        pendingApprovals,
+      }));
+    } catch (error) {
+      // best-effort; keep previous stats
+      console.log('Failed to refresh system status:', error);
+    }
+  };
+
   const loadAdminData = async () => {
     try {
       const user = await storageService.getUser();
@@ -166,9 +224,31 @@ export default function AdminDashboardScreen() {
     }
   };
 
+  const refreshRecentActivity = async () => {
+    setRecentActivityLoading(true);
+    try {
+      const res = await notificationsApi.list();
+      if (!res?.success || !Array.isArray(res.data)) {
+        setRecentActivities([]);
+        return;
+      }
+
+      const mapped = res.data
+        .map(notificationToRecentActivity)
+        .filter((a) => a.id);
+
+      setRecentActivities(mapped.slice(0, 6));
+    } catch {
+      // best-effort
+      setRecentActivities([]);
+    } finally {
+      setRecentActivityLoading(false);
+    }
+  };
+
   const onRefresh = async () => {
     setRefreshing(true);
-    await Promise.all([loadAdminData(), refreshUserStats()]);
+    await Promise.all([loadAdminData(), refreshUserStats(), refreshSystemStatus(), refreshRecentActivity()]);
     setRefreshing(false);
   };
 
@@ -366,7 +446,7 @@ export default function AdminDashboardScreen() {
         ) : activeNav === 'patients' ? (
           <AdminPatients />
         ) : activeNav === 'doctors' ? (
-          <AdminDoctors />
+          <AdminDoctorsRegistry />
         ) : activeNav === 'appointments' ? (
           <AdminAppointments />
         ) : activeNav === 'reports' ? (
@@ -490,17 +570,39 @@ export default function AdminDashboardScreen() {
           {/* Recent Activity  */}
           <View style={styles.section}>
             <RNText style={styles.sectionTitle}>Recent Activity</RNText>
-            {recentActivities.map((activity) => (
-              <View key={activity.id} style={styles.activityCard}>
-                <View style={[styles.activityIcon, { backgroundColor: `${activity.color}15` }]}>
-                  <MaterialCommunityIcons name={activity.icon as any} size={20} color={activity.color} />
+            {recentActivityLoading && !recentActivities.length ? (
+              <View style={styles.activityCard}>
+                <View style={[styles.activityIcon, { backgroundColor: '#6B728015' }]}>
+                  <MaterialCommunityIcons name="clock-outline" size={20} color="#6B7280" />
                 </View>
                 <View style={styles.activityContent}>
-                  <RNText style={styles.activityDescription}>{activity.description}</RNText>
-                  <RNText style={styles.activityTime}>{activity.time}</RNText>
+                  <RNText style={styles.activityDescription}>Loading recent activity…</RNText>
+                  <RNText style={styles.activityTime}>—</RNText>
                 </View>
               </View>
-            ))}
+            ) : recentActivities.length ? (
+              recentActivities.map((activity) => (
+                <View key={activity.id} style={styles.activityCard}>
+                  <View style={[styles.activityIcon, { backgroundColor: `${activity.color}15` }]}>
+                    <MaterialCommunityIcons name={activity.icon as any} size={20} color={activity.color} />
+                  </View>
+                  <View style={styles.activityContent}>
+                    <RNText style={styles.activityDescription}>{activity.description}</RNText>
+                    <RNText style={styles.activityTime}>{activity.time}</RNText>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <View style={styles.activityCard}>
+                <View style={[styles.activityIcon, { backgroundColor: '#6B728015' }]}>
+                  <MaterialCommunityIcons name="bell-off" size={20} color="#6B7280" />
+                </View>
+                <View style={styles.activityContent}>
+                  <RNText style={styles.activityDescription}>No recent activity</RNText>
+                  <RNText style={styles.activityTime}>—</RNText>
+                </View>
+              </View>
+            )}
           </View>
         </ScrollView>
         )}

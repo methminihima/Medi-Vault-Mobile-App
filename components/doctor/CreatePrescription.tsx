@@ -1,13 +1,9 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import * as Print from 'expo-print';
-import { shareAsync } from 'expo-sharing';
 import React from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   ImageBackground,
-  Modal,
   Platform,
   Text as RNText,
   ScrollView,
@@ -16,8 +12,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import { patientsApi } from '../../src/api/patients';
-import { prescriptionsApi } from '../../src/api/prescriptions';
+import { API_BASE_URL } from '../../src/config/constants';
 import { storageService } from '../../src/services/storageService';
 
 interface Medication {
@@ -29,32 +24,25 @@ interface Medication {
 }
 
 interface PrescriptionData {
-  patientName: string;
-  patientNIC: string;
-  patientAge: string;
-  patientPhone: string;
   medications: Medication[];
   diagnosis: string;
   notes: string;
 }
 
-export default function CreatePrescription() {
+type CreatePrescriptionProps = {
+  patientId?: string | number;
+  appointmentId?: string | number;
+  onSaved?: (result: { id: string }) => void;
+};
+
+export default function CreatePrescription({ patientId, appointmentId, onSaved }: CreatePrescriptionProps) {
   const [prescriptionData, setPrescriptionData] = React.useState<PrescriptionData>({
-    patientName: '',
-    patientNIC: '',
-    patientAge: '',
-    patientPhone: '',
     medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
     diagnosis: '',
     notes: ''
   });
 
   const [prescriptionCode, setPrescriptionCode] = React.useState<string>('');
-  const [selectedPatientId, setSelectedPatientId] = React.useState<number | null>(null);
-  const [searchModalVisible, setSearchModalVisible] = React.useState(false);
-  const [patientSearchQuery, setPatientSearchQuery] = React.useState('');
-  const [searchResults, setSearchResults] = React.useState<any[]>([]);
-  const [isSearching, setIsSearching] = React.useState(false);
   const [isSaving, setIsSaving] = React.useState(false);
   const [savedPrescriptionId, setSavedPrescriptionId] = React.useState<number | null>(null);
   const [currentDoctor, setCurrentDoctor] = React.useState<any>(null);
@@ -68,37 +56,7 @@ export default function CreatePrescription() {
     loadDoctor();
   }, []);
 
-  const searchPatients = async (query: string) => {
-    if (!query || query.length < 2) {
-      setSearchResults([]);
-      return;
-    }
-
-    setIsSearching(true);
-    try {
-      const response = await patientsApi.getPatients({ search: query, limit: 10 });
-      setSearchResults(response.data || []);
-    } catch (error) {
-      console.error('Error searching patients:', error);
-      Alert.alert('Error', 'Failed to search patients');
-    } finally {
-      setIsSearching(false);
-    }
-  };
-
-  const selectPatient = (patient: any) => {
-    setPrescriptionData({
-      ...prescriptionData,
-      patientName: patient.fullName || `${patient.firstName} ${patient.lastName}`,
-      patientNIC: patient.nic || '',
-      patientAge: patient.dateOfBirth ? String(new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear()) : '',
-      patientPhone: patient.phone || '',
-    });
-    setSelectedPatientId(patient.id);
-    setSearchModalVisible(false);
-    setPatientSearchQuery('');
-    setSearchResults([]);
-  };
+  // Patient personal info is not entered here anymore.
 
   const addMedication = () => {
     setPrescriptionData({
@@ -123,9 +81,8 @@ export default function CreatePrescription() {
   };
 
   const validatePrescription = () => {
-    // Validate required fields
-    if (!prescriptionData.patientName || !prescriptionData.patientNIC) {
-      Alert.alert('Validation Error', 'Patient name and NIC are required');
+    if (patientId == null || !String(patientId).trim()) {
+      Alert.alert('Validation Error', 'Patient is missing. Please open Create Prescription from an appointment.');
       return false;
     }
 
@@ -141,353 +98,8 @@ export default function CreatePrescription() {
     return true;
   };
 
-  const generatePrescriptionHTML = (code: string, issueDate: string, validUntil: string, doctorName: string): string => {
-    return `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          @page {
-            margin: 15mm;
-          }
-          body {
-            font-family: 'Times New Roman', serif;
-            margin: 0;
-            padding: 0;
-            color: #000;
-            background: white;
-          }
-          .prescription-pad {
-            max-width: 210mm;
-            min-height: 297mm;
-            margin: 0 auto;
-            padding: 0;
-            background: white;
-          }
-          .header {
-            text-align: center;
-            border-bottom: 2px solid #000;
-            padding-bottom: 10px;
-            margin-bottom: 15px;
-          }
-          .clinic-name {
-            font-size: 24px;
-            font-weight: bold;
-            color: #000;
-            margin: 0;
-            letter-spacing: 2px;
-          }
-          .doctor-name {
-            font-size: 16px;
-            margin: 5px 0 3px 0;
-            font-weight: normal;
-          }
-          .credentials {
-            font-size: 12px;
-            color: #333;
-            margin: 2px 0;
-          }
-          .contact-info {
-            font-size: 11px;
-            color: #555;
-            margin-top: 5px;
-          }
-          .rx-header {
-            margin: 20px 0 10px 0;
-            overflow: hidden;
-          }
-          .rx-number {
-            float: left;
-            font-size: 11px;
-            color: #666;
-          }
-          .rx-date {
-            float: right;
-            font-size: 12px;
-          }
-          .patient-section {
-            margin: 15px 0;
-            padding: 8px 0;
-            border-top: 1px solid #ddd;
-            border-bottom: 1px solid #ddd;
-          }
-          .patient-row {
-            margin: 5px 0;
-            font-size: 13px;
-          }
-          .patient-label {
-            display: inline-block;
-            width: 100px;
-            font-weight: bold;
-          }
-          .diagnosis {
-            margin: 15px 0;
-            font-size: 13px;
-          }
-          .diagnosis strong {
-            text-decoration: underline;
-          }
-          .rx-symbol {
-            font-size: 56px;
-            font-weight: bold;
-            margin: 20px 0 15px 0;
-            color: #000;
-            font-family: Georgia, serif;
-          }
-          .medications {
-            margin: 20px 0;
-            min-height: 300px;
-          }
-          .med-item {
-            margin: 15px 0;
-            font-size: 14px;
-            line-height: 1.8;
-          }
-          .med-name {
-            font-weight: bold;
-            font-size: 15px;
-          }
-          .med-sig {
-            margin-left: 25px;
-            font-size: 13px;
-          }
-          .advice {
-            margin: 20px 0;
-            font-size: 13px;
-            line-height: 1.6;
-          }
-          .advice strong {
-            text-decoration: underline;
-          }
-          .validity {
-            margin-top: 20px;
-            font-size: 11px;
-            color: #666;
-            font-style: italic;
-          }
-          .signature-block {
-            margin-top: 80px;
-            text-align: right;
-            padding-right: 30px;
-          }
-          .signature-line {
-            border-top: 1.5px solid #000;
-            width: 180px;
-            margin: 50px 0 8px auto;
-          }
-          .doctor-signature {
-            font-size: 14px;
-            font-weight: bold;
-          }
-          .doctor-reg {
-            font-size: 11px;
-            color: #555;
-          }
-          .footer {
-            position: fixed;
-            bottom: 10mm;
-            left: 15mm;
-            right: 15mm;
-            text-align: center;
-            font-size: 9px;
-            color: #888;
-            border-top: 1px solid #ccc;
-            padding-top: 8px;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="prescription-pad">
-          <!-- Header -->
-          <div class="header">
-            <div class="clinic-name">MEDI VAULT MEDICAL CENTER</div>
-            <div class="doctor-name">${doctorName}</div>
-            <div class="credentials">MBBS, MD (General Medicine) | Reg. No: REG-2024-XXXX</div>
-            <div class="contact-info">
-              123 Medical Avenue, Colombo 07, Sri Lanka | Tel: +94 11 234 5678
-            </div>
-          </div>
-
-          <!-- Prescription Number & Date -->
-          <div class="rx-header">
-            <div class="rx-number">Rx No: ${code}</div>
-            <div class="rx-date">Date: ${new Date(issueDate).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}</div>
-          </div>
-
-          <!-- Patient Information -->
-          <div class="patient-section">
-            <div class="patient-row">
-              <span class="patient-label">Name:</span>
-              <span>${prescriptionData.patientName}</span>
-            </div>
-            <div class="patient-row">
-              <span class="patient-label">Age/Sex:</span>
-              <span>${prescriptionData.patientAge || 'N/A'} / N/A</span>
-              <span style="margin-left: 50px;">
-                <span class="patient-label">NIC:</span>
-                ${prescriptionData.patientNIC}
-              </span>
-            </div>
-            ${prescriptionData.patientPhone ? `
-            <div class="patient-row">
-              <span class="patient-label">Contact:</span>
-              <span>${prescriptionData.patientPhone}</span>
-            </div>
-            ` : ''}
-          </div>
-
-          <!-- Diagnosis -->
-          ${prescriptionData.diagnosis ? `
-          <div class="diagnosis">
-            <strong>Diagnosis:</strong> ${prescriptionData.diagnosis}
-          </div>
-          ` : ''}
-
-          <!-- Rx Symbol -->
-          <div class="rx-symbol">℞</div>
-
-          <!-- Medications -->
-          <div class="medications">
-            ${prescriptionData.medications.filter(m => m.name && m.dosage).map((med, index) => `
-            <div class="med-item">
-              <div class="med-name">${index + 1}. Tab. ${med.name}</div>
-              <div class="med-sig">
-                ${med.dosage} - ${med.frequency} - ${med.duration}
-                ${med.instructions ? `<br><em>${med.instructions}</em>` : ''}
-              </div>
-            </div>
-            `).join('')}
-          </div>
-
-          <!-- Additional Advice -->
-          ${prescriptionData.notes ? `
-          <div class="advice">
-            <strong>Advice:</strong><br>
-            ${prescriptionData.notes}
-          </div>
-          ` : ''}
-
-          <!-- Validity -->
-          <div class="validity">
-            Valid until: ${new Date(validUntil).toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' })}
-          </div>
-
-          <!-- Signature -->
-          <div class="signature-block">
-            <div class="signature-line"></div>
-            <div class="doctor-signature">${doctorName}</div>
-            <div class="doctor-reg">MBBS, MD | Reg. No: REG-2024-XXXX</div>
-          </div>
-
-          <!-- Footer -->
-          <div class="footer">
-            This is a computer-generated prescription | For verification: +94 11 234 5678
-          </div>
-        </div>
-      </body>
-    </html>
-    `;
-  };
-
-  const generatePrescriptionPDF = async () => {
-    if (!validatePrescription()) {
-      return;
-    }
-
-    const code = prescriptionCode || `RX-${Date.now()}-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
-    if (!prescriptionCode) {
-      setPrescriptionCode(code);
-    }
-    
-    const issueDate = new Date().toISOString().split('T')[0];
-    const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const doctorName = currentDoctor ? `Dr. ${currentDoctor.firstName} ${currentDoctor.lastName}` : 'Dr. [Current Doctor]';
-
-    const html = generatePrescriptionHTML(code, issueDate, validUntil, doctorName);
-
-    try {
-      // First show user what they want to do
-      Alert.alert(
-        'Generate Prescription',
-        'Choose an action for the prescription PDF:',
-        [
-          {
-            text: 'Print',
-            onPress: async () => {
-              try {
-                await Print.printAsync({ html });
-              } catch (error) {
-                console.error('Print error:', error);
-                Alert.alert('Error', 'Failed to print. Please try again.');
-              }
-            }
-          },
-          {
-            text: 'Save & Share',
-            onPress: async () => {
-              try {
-                const { uri } = await Print.printToFileAsync({ 
-                  html,
-                  base64: false 
-                });
-                await shareAsync(uri, { 
-                  UTI: '.pdf', 
-                  mimeType: 'application/pdf' 
-                });
-              } catch (error) {
-                console.error('Share error:', error);
-                Alert.alert('Error', 'Failed to save/share PDF. Please try again.');
-              }
-            }
-          },
-          {
-            text: 'Cancel',
-            style: 'cancel'
-          }
-        ]
-      );
-      
-      // Reset form option after successful generation
-      setTimeout(() => {
-        Alert.alert(
-          'Create New Prescription?',
-          'Would you like to create another prescription?',
-          [
-            {
-              text: 'Yes',
-              onPress: () => {
-                setPrescriptionData({
-                  patientName: '',
-                  patientNIC: '',
-                  patientAge: '',
-                  patientPhone: '',
-                  medications: [{ name: '', dosage: '', frequency: '', duration: '', instructions: '' }],
-                  diagnosis: '',
-                  notes: ''
-                });
-                setPrescriptionCode('');
-                setSelectedPatientId(null);
-                setSavedPrescriptionId(null);
-              }
-            },
-            { text: 'No', style: 'cancel' }
-          ]
-        );
-      }, 500);
-    } catch (error) {
-      console.error('Error generating prescription:', error);
-      Alert.alert('Error', 'Failed to generate prescription. Please try again.');
-    }
-  };
-
   const savePrescriptionToBackend = async () => {
     if (!validatePrescription()) {
-      return null;
-    }
-
-    if (!selectedPatientId) {
-      Alert.alert('Error', 'Please select a patient from the system');
       return null;
     }
 
@@ -501,39 +113,65 @@ export default function CreatePrescription() {
       const prescriptionDate = new Date().toISOString();
       const expiryDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
 
-      // Note: This is a simplified version. In a real app, you'd need to:
-      // 1. Get actual medicine IDs from the system
-      // 2. Calculate quantities properly
-      // For now, we'll use dummy medicine IDs
-      const prescriptionDto = {
-        patientId: selectedPatientId,
-        doctorId: currentDoctor.id,
-        prescriptionDate,
-        expiryDate,
-        instructions: prescriptionData.notes,
-        items: prescriptionData.medications
-          .filter(m => m.name && m.dosage && m.frequency && m.duration)
-          .map((med) => ({
-            medicineId: 1, // TODO: Get real medicine ID from medicine search
-            dosage: med.dosage,
-            frequency: med.frequency,
-            duration: med.duration,
-            quantity: 30, // TODO: Calculate based on duration and frequency
-            instructions: med.instructions
-          }))
-      };
+      const items = prescriptionData.medications
+        .filter((m) => m.name && m.dosage && m.frequency && m.duration)
+        .map((med) => ({
+          medicineName: med.name,
+          dosage: med.dosage,
+          frequency: med.frequency,
+          duration: med.duration,
+          quantity: 1,
+          instructions: med.instructions,
+        }));
 
-      const response = await prescriptionsApi.createPrescription(prescriptionDto);
-      
-      if (response.success && response.data) {
-        const code = `RX-${response.data.id}-${Date.now().toString().slice(-6)}`;
-        setPrescriptionCode(code);
-        setSavedPrescriptionId(response.data.id);
-        Alert.alert('Success', 'Prescription saved successfully!');
-        return response.data.id;
-      } else {
-        throw new Error('Failed to save prescription');
+      const resp = await fetch(`${API_BASE_URL}/prescriptions`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          patientId: String(patientId),
+          doctorId: String(currentDoctor.id),
+          appointmentId: appointmentId != null && String(appointmentId).trim() ? String(appointmentId) : undefined,
+          diagnosis: prescriptionData.diagnosis,
+          notes: prescriptionData.notes,
+          prescriptionDate,
+          expiryDate,
+          items,
+        }),
+      });
+
+      const raw = await resp.text();
+      const json = (() => {
+        try {
+          return raw ? JSON.parse(raw) : null;
+        } catch {
+          return null;
+        }
+      })();
+
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.message || `Failed to save prescription (${resp.status})`);
       }
+
+      const savedId = String(json?.data?.id ?? '').trim();
+      const code = savedId ? `RX-${savedId}` : `RX-${Date.now()}`;
+      setPrescriptionCode(code);
+      setSavedPrescriptionId(null);
+      Alert.alert('Success', 'Prescription saved successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (savedId) {
+              onSaved?.({ id: savedId });
+            } else {
+              onSaved?.({ id: 'ok' });
+            }
+          },
+        },
+      ]);
+      return savedId || 'ok';
     } catch (error: any) {
       console.error('Error saving prescription:', error);
       Alert.alert('Error', error.message || 'Failed to save prescription to system');
@@ -544,49 +182,7 @@ export default function CreatePrescription() {
   };
 
   const handleSavePrescription = async () => {
-    // Save to backend first
-    const prescriptionId = await savePrescriptionToBackend();
-    if (prescriptionId) {
-      // Then generate PDF
-      await generatePrescriptionPDF();
-    }
-  };
-
-  const handleSharePrescription = async () => {
-    // Ensure prescription is saved first
-    let prescriptionId = savedPrescriptionId;
-    if (!prescriptionId) {
-      prescriptionId = await savePrescriptionToBackend();
-      if (!prescriptionId) return;
-    }
-
-    // Generate and share PDF
-    if (!validatePrescription()) return;
-
-    try {
-      const code = prescriptionCode || `RX-${prescriptionId}-${Date.now().toString().slice(-6)}`;
-      const issueDate = new Date().toISOString().split('T')[0];
-      const validUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      const doctorName = currentDoctor ? `Dr. ${currentDoctor.firstName} ${currentDoctor.lastName}` : 'Dr. [Current Doctor]';
-
-      const html = generatePrescriptionHTML(code, issueDate, validUntil, doctorName);
-
-      const { uri } = await Print.printToFileAsync({ 
-        html,
-        base64: false 
-      });
-      
-      await shareAsync(uri, { 
-        UTI: '.pdf', 
-        mimeType: 'application/pdf',
-        dialogTitle: `Share Prescription for ${prescriptionData.patientName}`
-      });
-      
-      Alert.alert('Success', 'Prescription shared successfully!');
-    } catch (error) {
-      console.error('Share error:', error);
-      Alert.alert('Error', 'Failed to share prescription. Please try again.');
-    }
+    await savePrescriptionToBackend();
   };
 
   return (
@@ -613,55 +209,9 @@ export default function CreatePrescription() {
       </ImageBackground>
 
       <ScrollView style={styles.content} contentContainerStyle={styles.contentContainer}>
-        {/* Patient Information Section */}
+        {/* Diagnosis */}
         <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Patient Information</RNText>
-          
-          <RNText style={styles.label}>Patient Name *</RNText>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter patient full name"
-            placeholderTextColor="#9CA3AF"
-            value={prescriptionData.patientName}
-            onChangeText={(text) => setPrescriptionData({ ...prescriptionData, patientName: text })}
-          />
-
-          <RNText style={styles.label}>Patient NIC *</RNText>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter patient NIC number"
-            placeholderTextColor="#9CA3AF"
-            value={prescriptionData.patientNIC}
-            onChangeText={(text) => setPrescriptionData({ ...prescriptionData, patientNIC: text })}
-          />
-
-          <View style={styles.rowInputs}>
-            <View style={styles.halfInput}>
-              <RNText style={styles.label}>Age</RNText>
-              <TextInput
-                style={styles.input}
-                placeholder="Age"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="numeric"
-                value={prescriptionData.patientAge}
-                onChangeText={(text) => setPrescriptionData({ ...prescriptionData, patientAge: text })}
-              />
-            </View>
-
-            <View style={styles.halfInput}>
-              <RNText style={styles.label}>Phone</RNText>
-              <TextInput
-                style={styles.input}
-                placeholder="Phone number"
-                placeholderTextColor="#9CA3AF"
-                keyboardType="phone-pad"
-                value={prescriptionData.patientPhone}
-                onChangeText={(text) => setPrescriptionData({ ...prescriptionData, patientPhone: text })}
-              />
-            </View>
-          </View>
-
-          <RNText style={styles.label}>Diagnosis</RNText>
+          <RNText style={styles.sectionTitle}>Diagnosis</RNText>
           <TextInput
             style={[styles.input, styles.textArea]}
             placeholder="Enter diagnosis"
@@ -772,21 +322,6 @@ export default function CreatePrescription() {
         {/* Action Buttons */}
         <View style={styles.actionButtons}>
           <TouchableOpacity 
-            style={styles.searchPatientButton} 
-            onPress={() => setSearchModalVisible(true)}
-          >
-            <Ionicons name="search" size={20} color="#1E4BA3" />
-            <RNText style={styles.searchPatientButtonText}>Search Patient in System</RNText>
-          </TouchableOpacity>
-
-          {selectedPatientId && (
-            <View style={styles.selectedPatientBadge}>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-              <RNText style={styles.selectedPatientText}>Patient selected from system</RNText>
-            </View>
-          )}
-
-          <TouchableOpacity 
             style={[styles.saveButton, isSaving && styles.disabledButton]} 
             onPress={handleSavePrescription}
             disabled={isSaving}
@@ -795,98 +330,13 @@ export default function CreatePrescription() {
               <ActivityIndicator size="small" color="#fff" />
             ) : (
               <>
-                <MaterialCommunityIcons name="file-pdf-box" size={20} color="#fff" />
-                <RNText style={styles.saveButtonText}>Save & Generate PDF</RNText>
+                <Ionicons name="save-outline" size={20} color="#fff" />
+                <RNText style={styles.saveButtonText}>Save Prescription</RNText>
               </>
             )}
           </TouchableOpacity>
-
-          {savedPrescriptionId && (
-            <TouchableOpacity 
-              style={styles.shareButton} 
-              onPress={handleSharePrescription}
-            >
-              <Ionicons name="share-social" size={20} color="#fff" />
-              <RNText style={styles.shareButtonText}>Share to Patient</RNText>
-            </TouchableOpacity>
-          )}
         </View>
       </ScrollView>
-
-      {/* Patient Search Modal */}
-      <Modal
-        visible={searchModalVisible}
-        animationType="slide"
-        transparent={true}
-        onRequestClose={() => setSearchModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <RNText style={styles.modalTitle}>Search Patient</RNText>
-              <TouchableOpacity onPress={() => setSearchModalVisible(false)}>
-                <Ionicons name="close" size={24} color="#6B7280" />
-              </TouchableOpacity>
-            </View>
-
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by name or NIC..."
-              placeholderTextColor="#9CA3AF"
-              value={patientSearchQuery}
-              onChangeText={(text) => {
-                setPatientSearchQuery(text);
-                searchPatients(text);
-              }}
-              autoFocus
-            />
-
-            {isSearching ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color="#1E4BA3" />
-                <RNText style={styles.loadingText}>Searching...</RNText>
-              </View>
-            ) : (
-              <FlatList
-                data={searchResults}
-                keyExtractor={(item) => item.id.toString()}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.patientResultItem}
-                    onPress={() => selectPatient(item)}
-                  >
-                    <View style={styles.patientResultIcon}>
-                      <Ionicons name="person" size={24} color="#1E4BA3" />
-                    </View>
-                    <View style={styles.patientResultInfo}>
-                      <RNText style={styles.patientResultName}>
-                        {item.fullName || `${item.firstName} ${item.lastName}`}
-                      </RNText>
-                      <RNText style={styles.patientResultDetails}>
-                        NIC: {item.nic} | Phone: {item.phone}
-                      </RNText>
-                    </View>
-                    <Ionicons name="chevron-forward" size={20} color="#9CA3AF" />
-                  </TouchableOpacity>
-                )}
-                ListEmptyComponent={
-                  patientSearchQuery.length >= 2 ? (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="search" size={48} color="#D1D5DB" />
-                      <RNText style={styles.emptyStateText}>No patients found</RNText>
-                    </View>
-                  ) : (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="people" size={48} color="#D1D5DB" />
-                      <RNText style={styles.emptyStateText}>Type to search patients</RNText>
-                    </View>
-                  )
-                }
-              />
-            )}
-          </View>
-        </View>
-      </Modal>
     </ImageBackground>
   );
 }

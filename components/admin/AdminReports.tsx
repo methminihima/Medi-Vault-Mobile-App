@@ -1,17 +1,23 @@
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
-import React, { useState } from 'react';
+import * as Print from 'expo-print';
+import { shareAsync } from 'expo-sharing';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+    ActivityIndicator,
+    Alert,
     Dimensions,
     ImageBackground,
     Platform,
     Text as RNText,
     ScrollView,
+    Share,
     StyleSheet,
     TouchableOpacity,
     View
 } from 'react-native';
 // @ts-ignore - react-native-chart-kit doesn't have TypeScript definitions
 import { BarChart, LineChart, PieChart, ProgressChart } from 'react-native-chart-kit';
+import { API_BASE_URL } from '../../src/config/constants';
 
 const { width } = Dimensions.get('window');
 const isSmallScreen = width < 360;
@@ -28,115 +34,158 @@ interface ReportCard {
   trendValue: string;
 }
 
+type Period = 'today' | 'week' | 'month' | 'year';
+
+type Trend = 'up' | 'down' | 'stable';
+
+type ReportsAnalytics = {
+  period: Period;
+  range: { start: string; end: string };
+  kpis: {
+    totalPatients: number;
+    totalStaff: number;
+    totalAppointments: number;
+    completionRate: number;
+    cancelRate: number;
+    inPeriod: {
+      appointments: number;
+      completed: number;
+      cancelled: number;
+      newPatients: number;
+      newStaff: number;
+    };
+  };
+  trends: {
+    appointments: { labels: string[]; data: number[] };
+  };
+  distributions: {
+    appointmentStatus: Record<string, number>;
+  };
+  cards: {
+    patients: { trend: Trend; trendValue: string };
+    staff: { trend: Trend; trendValue: string };
+    appointments: { trend: Trend; trendValue: string };
+    completionRate: { trend: Trend; trendValue: string };
+  };
+  recentActivity: Array<{
+    id: string;
+    type: string;
+    title: string;
+    message: string;
+    created_at: string;
+  }>;
+};
+
+function safeNum(v: unknown, fallback = 0): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function formatPercent(n: number): string {
+  const v = Math.round(n * 10) / 10;
+  return `${v}%`;
+}
+
+function formatTimeAgo(iso: string): string {
+  const d = new Date(iso);
+  const t = d.getTime();
+  if (Number.isNaN(t)) return '';
+  const deltaSec = Math.floor((Date.now() - t) / 1000);
+  if (deltaSec < 60) return `${deltaSec}s ago`;
+  const deltaMin = Math.floor(deltaSec / 60);
+  if (deltaMin < 60) return `${deltaMin} mins ago`;
+  const deltaHr = Math.floor(deltaMin / 60);
+  if (deltaHr < 24) return `${deltaHr} hours ago`;
+  const deltaDay = Math.floor(deltaHr / 24);
+  return `${deltaDay} days ago`;
+}
+
 export default function AdminReports() {
-  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month' | 'year'>('month');
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>('month');
+  const [loading, setLoading] = useState(false);
+  const [analytics, setAnalytics] = useState<ReportsAnalytics | null>(null);
 
-  const reportCards: ReportCard[] = [
-    {
-      id: '1',
-      title: 'Total Revenue',
-      description: 'Overall revenue generated',
-      icon: 'cash-multiple',
-      color: '#10B981',
-      value: '$127,450',
-      trend: 'up',
-      trendValue: '+12.5%'
-    },
-    {
-      id: '2',
-      title: 'Total Appointments',
-      description: 'Scheduled appointments',
-      icon: 'calendar-check',
-      color: '#3B82F6',
-      value: '1,247',
-      trend: 'up',
-      trendValue: '+8.3%'
-    },
-    {
-      id: '3',
-      title: 'New Patients',
-      description: 'Newly registered patients',
-      icon: 'account-plus',
-      color: '#8B5CF6',
-      value: '342',
-      trend: 'up',
-      trendValue: '+15.2%'
-    },
-    {
-      id: '4',
-      title: 'Active Doctors',
-      description: 'Currently active doctors',
-      icon: 'doctor',
-      color: '#06B6D4',
-      value: '87',
-      trend: 'stable',
-      trendValue: '0%'
-    },
-    {
-      id: '5',
-      title: 'Prescriptions',
-      description: 'Total prescriptions issued',
-      icon: 'pill',
-      color: '#EC4899',
-      value: '2,156',
-      trend: 'up',
-      trendValue: '+6.7%'
-    },
-    {
-      id: '6',
-      title: 'Lab Tests',
-      description: 'Laboratory tests conducted',
-      icon: 'flask',
-      color: '#F59E0B',
-      value: '1,523',
-      trend: 'down',
-      trendValue: '-2.1%'
-    },
-    {
-      id: '7',
-      title: 'Patient Satisfaction',
-      description: 'Average satisfaction rating',
-      icon: 'heart',
-      color: '#EF4444',
-      value: '4.7/5.0',
-      trend: 'up',
-      trendValue: '+0.3'
-    },
-    {
-      id: '8',
-      title: 'System Uptime',
-      description: 'Server availability',
-      icon: 'server',
-      color: '#10B981',
-      value: '99.8%',
-      trend: 'stable',
-      trendValue: '0%'
+  const fetchAnalytics = useCallback(async (period: Period) => {
+    setLoading(true);
+    try {
+      const resp = await fetch(`${API_BASE_URL}/reports/analytics?period=${period}`, {
+        method: 'GET',
+        headers: { Accept: 'application/json' },
+      });
+      const rawText = await resp.text();
+      const json = (() => {
+        try {
+          return rawText ? JSON.parse(rawText) : null;
+        } catch {
+          return null;
+        }
+      })();
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.message || `Failed to load reports (${resp.status})`);
+      }
+      setAnalytics(json.data as ReportsAnalytics);
+    } catch (e: any) {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to load reports');
+      setAnalytics(null);
+    } finally {
+      setLoading(false);
     }
-  ];
+  }, []);
 
-  const departmentStats = [
-    { name: 'Cardiology', appointments: 245, revenue: '$36,750', color: '#EF4444' },
-    { name: 'Neurology', appointments: 189, revenue: '$34,020', color: '#8B5CF6' },
-    { name: 'Pediatrics', appointments: 312, revenue: '$37,440', color: '#EC4899' },
-    { name: 'Orthopedics', appointments: 176, revenue: '$35,200', color: '#F59E0B' },
-    { name: 'Dermatology', appointments: 134, revenue: '$17,420', color: '#10B981' },
-  ];
+  useEffect(() => {
+    fetchAnalytics(selectedPeriod);
+  }, [fetchAnalytics, selectedPeriod]);
 
-  const topDoctors = [
-    { name: 'Dr. Sarah Johnson', specialty: 'Cardiologist', patients: 342, rating: 4.8, revenue: '$51,300' },
-    { name: 'Dr. Michael Chen', specialty: 'Neurologist', patients: 287, rating: 4.9, revenue: '$51,660' },
-    { name: 'Dr. Emily Rodriguez', specialty: 'Pediatrician', patients: 456, rating: 4.7, revenue: '$54,720' },
-    { name: 'Dr. James Wilson', specialty: 'Orthopedic', patients: 298, rating: 4.6, revenue: '$59,600' },
-    { name: 'Dr. Jennifer Martinez', specialty: 'Gynecologist', patients: 389, rating: 4.8, revenue: '$54,460' },
-  ];
+  const reportCards: ReportCard[] = useMemo(() => {
+    const totalPatients = safeNum(analytics?.kpis?.totalPatients);
+    const totalStaff = safeNum(analytics?.kpis?.totalStaff);
+    const totalAppointments = safeNum(analytics?.kpis?.totalAppointments);
+    const completionRate = safeNum(analytics?.kpis?.completionRate);
 
-  const recentActivity = [
-    { type: 'appointment', text: '15 new appointments scheduled', time: '10 mins ago', icon: 'calendar-plus', color: '#3B82F6' },
-    { type: 'patient', text: '8 new patient registrations', time: '25 mins ago', icon: 'account-plus', color: '#10B981' },
-    { type: 'payment', text: '$12,450 revenue collected', time: '1 hour ago', icon: 'cash', color: '#F59E0B' },
-    { type: 'prescription', text: '42 prescriptions issued', time: '2 hours ago', icon: 'pill', color: '#EC4899' },
-    { type: 'lab', text: '28 lab tests completed', time: '3 hours ago', icon: 'flask', color: '#8B5CF6' },
-  ];
+    return [
+      {
+        id: 'patients',
+        title: 'Total Patients',
+        description: 'Registered patients',
+        icon: 'account-group',
+        color: '#10B981',
+        value: String(totalPatients),
+        trend: (analytics?.cards?.patients?.trend || 'stable') as Trend,
+        trendValue: analytics?.cards?.patients?.trendValue || '0%',
+      },
+      {
+        id: 'staff',
+        title: 'Medical Staff',
+        description: 'Doctors, pharmacists & lab techs',
+        icon: 'doctor',
+        color: '#3B82F6',
+        value: String(totalStaff),
+        trend: (analytics?.cards?.staff?.trend || 'stable') as Trend,
+        trendValue: analytics?.cards?.staff?.trendValue || '0%',
+      },
+      {
+        id: 'appointments',
+        title: 'Total Appointments',
+        description: 'All appointments in system',
+        icon: 'calendar-check',
+        color: '#8B5CF6',
+        value: String(totalAppointments),
+        trend: (analytics?.cards?.appointments?.trend || 'stable') as Trend,
+        trendValue: analytics?.cards?.appointments?.trendValue || '0%',
+      },
+      {
+        id: 'completion',
+        title: 'Completion Rate',
+        description: 'Completed / total (selected period)',
+        icon: 'check-decagram',
+        color: '#06B6D4',
+        value: formatPercent(completionRate),
+        trend: (analytics?.cards?.completionRate?.trend || 'stable') as Trend,
+        trendValue: analytics?.cards?.completionRate?.trendValue || '0%',
+      },
+    ];
+  }, [analytics]);
 
   const getTrendIcon = (trend: string) => {
     switch (trend) {
@@ -154,6 +203,105 @@ export default function AdminReports() {
     }
   };
 
+  const onExportCsv = useCallback(async () => {
+    if (!analytics) return;
+    const header = ['Metric', 'Value'];
+    const rows = [
+      ['Total Patients', String(analytics.kpis.totalPatients)],
+      ['Medical Staff', String(analytics.kpis.totalStaff)],
+      ['Total Appointments', String(analytics.kpis.totalAppointments)],
+      ['Completion Rate', formatPercent(analytics.kpis.completionRate)],
+      ['Cancel Rate', formatPercent(analytics.kpis.cancelRate)],
+      ['Period', analytics.period],
+      ['Range Start', analytics.range.start],
+      ['Range End', analytics.range.end],
+    ];
+
+    const statusHeader = ['Appointment Status', 'Count'];
+    const statusRows = Object.entries(analytics.distributions.appointmentStatus || {}).map(([k, v]) => [k, String(v)]);
+
+    const toCsvLine = (cols: string[]) => cols.map((c) => `"${String(c ?? '').replace(/\"/g, '""')}"`).join(',');
+    const csv = [
+      toCsvLine(header),
+      ...rows.map((r) => toCsvLine(r)),
+      '',
+      toCsvLine(statusHeader),
+      ...statusRows.map((r) => toCsvLine(r)),
+    ].join('\n');
+
+    try {
+      await Share.share({ title: 'Reports CSV', message: csv });
+    } catch {
+      // ignore
+    }
+  }, [analytics]);
+
+  const onExportPdf = useCallback(async () => {
+    if (!analytics) return;
+    const html = `
+      <html>
+        <head>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif; padding: 16px; }
+            h1 { margin: 0 0 6px 0; }
+            .muted { color: #6b7280; margin-bottom: 16px; }
+            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+            td, th { border: 1px solid #e5e7eb; padding: 8px; text-align: left; font-size: 12px; }
+            th { background: #f9fafb; }
+          </style>
+        </head>
+        <body>
+          <h1>Reports & Analytics</h1>
+          <div class="muted">Period: ${analytics.period} (${analytics.range.start} → ${analytics.range.end})</div>
+          <h2>Key Metrics</h2>
+          <table>
+            <tr><th>Metric</th><th>Value</th></tr>
+            <tr><td>Total Patients</td><td>${analytics.kpis.totalPatients}</td></tr>
+            <tr><td>Medical Staff</td><td>${analytics.kpis.totalStaff}</td></tr>
+            <tr><td>Total Appointments</td><td>${analytics.kpis.totalAppointments}</td></tr>
+            <tr><td>Completion Rate</td><td>${formatPercent(analytics.kpis.completionRate)}</td></tr>
+            <tr><td>Cancel Rate</td><td>${formatPercent(analytics.kpis.cancelRate)}</td></tr>
+          </table>
+          <h2>Appointment Status (selected period)</h2>
+          <table>
+            <tr><th>Status</th><th>Count</th></tr>
+            ${Object.entries(analytics.distributions.appointmentStatus || {})
+              .map(([k, v]) => `<tr><td>${k}</td><td>${v}</td></tr>`)
+              .join('')}
+          </table>
+        </body>
+      </html>
+    `;
+
+    try {
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      await shareAsync(uri, { UTI: '.pdf', mimeType: 'application/pdf' });
+    } catch (e) {
+      console.error('PDF export error:', e);
+      Alert.alert('Error', 'Failed to export PDF. Please try again.');
+    }
+  }, [analytics]);
+
+  const onPressExport = useCallback(() => {
+    Alert.alert('Export', 'Choose export format:', [
+      { text: 'Export CSV', onPress: onExportCsv },
+      { text: 'Export PDF', onPress: onExportPdf },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [onExportCsv, onExportPdf]);
+
+  const lineLabels = analytics?.trends?.appointments?.labels?.length
+    ? analytics.trends.appointments.labels
+    : [''];
+  const lineSeries = analytics?.trends?.appointments?.data?.length
+    ? analytics.trends.appointments.data
+    : [0];
+
+  const statusOrder = ['pending', 'confirmed', 'completed', 'cancel_requested', 'cancelled'];
+  const statusCounts = statusOrder.map((k) => safeNum(analytics?.distributions?.appointmentStatus?.[k]));
+  const statusTotal = statusCounts.reduce((sum, n) => sum + n, 0);
+
   return (
     <ImageBackground
       source={require('../../assets/images/Background-image.jpg')}
@@ -164,10 +312,20 @@ export default function AdminReports() {
       <View style={styles.header}>
         <View style={styles.headerTop}>
           <RNText style={styles.headerTitle}>Reports & Analytics</RNText>
-          <TouchableOpacity style={styles.exportButton}>
-            <MaterialCommunityIcons name="download" size={20} color="#fff" />
-            <RNText style={styles.exportButtonText}>Export</RNText>
-          </TouchableOpacity>
+          <View style={{ flexDirection: 'row', gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.exportButton, { backgroundColor: '#1E4BA3' }]}
+              onPress={() => fetchAnalytics(selectedPeriod)}
+              disabled={loading}
+            >
+              <Ionicons name="refresh" size={18} color="#fff" />
+              <RNText style={styles.exportButtonText}>Refresh</RNText>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.exportButton} onPress={onPressExport}>
+              <MaterialCommunityIcons name="download" size={20} color="#fff" />
+              <RNText style={styles.exportButtonText}>Export</RNText>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Period Selector */}
@@ -212,6 +370,12 @@ export default function AdminReports() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        {loading ? (
+          <View style={{ paddingVertical: 10, alignItems: 'center' }}>
+            <ActivityIndicator size="small" color="#1E4BA3" />
+          </View>
+        ) : null}
+
         {/* Key Metrics Grid */}
         <View style={styles.section}>
           <RNText style={styles.sectionTitle}>Key Performance Indicators</RNText>
@@ -235,16 +399,16 @@ export default function AdminReports() {
           </View>
         </View>
 
-        {/* Revenue Trend Chart */}
+        {/* Appointments Trend Chart */}
         <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Revenue Trend</RNText>
+          <RNText style={styles.sectionTitle}>Appointments Trend</RNText>
           <View style={styles.chartCard}>
             <LineChart
               data={{
-                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                labels: lineLabels,
                 datasets: [
                   {
-                    data: [45000, 52000, 48000, 65000, 58000, 72000]
+                    data: lineSeries
                   }
                 ]
               }}
@@ -272,16 +436,16 @@ export default function AdminReports() {
           </View>
         </View>
 
-        {/* Appointments by Department Chart */}
+        {/* Appointments by Status Chart */}
         <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Appointments by Department</RNText>
+          <RNText style={styles.sectionTitle}>Appointments by Status</RNText>
           <View style={styles.chartCard}>
             <BarChart
               data={{
-                labels: ['Cardiology', 'Neurology', 'Orthopedics', 'Pediatrics'],
+                labels: ['Pending', 'Confirmed', 'Completed', 'Cancel Req', 'Cancelled'],
                 datasets: [
                   {
-                    data: [245, 189, 156, 203]
+                    data: statusCounts
                   }
                 ]
               }}
@@ -306,41 +470,28 @@ export default function AdminReports() {
           </View>
         </View>
 
-        {/* Patient Distribution Chart */}
+        {/* Appointment Status Distribution Chart */}
         <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Patient Distribution</RNText>
+          <RNText style={styles.sectionTitle}>Appointment Status Distribution</RNText>
           <View style={styles.chartCard}>
             <PieChart
-              data={[
-                {
-                  name: 'New Patients',
-                  population: 450,
-                  color: '#007AFF',
-                  legendFontColor: '#333',
-                  legendFontSize: 12
-                },
-                {
-                  name: 'Follow-up',
-                  population: 680,
-                  color: '#34C759',
-                  legendFontColor: '#333',
-                  legendFontSize: 12
-                },
-                {
-                  name: 'Emergency',
-                  population: 120,
-                  color: '#FF3B30',
-                  legendFontColor: '#333',
-                  legendFontSize: 12
-                },
-                {
-                  name: 'Routine Check',
-                  population: 350,
-                  color: '#FF9500',
-                  legendFontColor: '#333',
-                  legendFontSize: 12
-                }
-              ]}
+              data={
+                [
+                  { key: 'pending', name: 'Pending', color: '#FF9500' },
+                  { key: 'confirmed', name: 'Confirmed', color: '#34C759' },
+                  { key: 'completed', name: 'Completed', color: '#007AFF' },
+                  { key: 'cancel_requested', name: 'Cancel Req', color: '#F59E0B' },
+                  { key: 'cancelled', name: 'Cancelled', color: '#FF3B30' },
+                ]
+                  .map((s) => ({
+                    name: s.name,
+                    population: safeNum(analytics?.distributions?.appointmentStatus?.[s.key]),
+                    color: s.color,
+                    legendFontColor: '#333',
+                    legendFontSize: 12,
+                  }))
+                  .filter((d) => d.population > 0 || statusTotal === 0)
+              }
               width={chartWidth}
               height={220}
               chartConfig={{
@@ -355,14 +506,17 @@ export default function AdminReports() {
           </View>
         </View>
 
-        {/* Performance Metrics Chart */}
+        {/* Completion & Cancellation Rates */}
         <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Performance Metrics</RNText>
+          <RNText style={styles.sectionTitle}>Rates</RNText>
           <View style={styles.chartCard}>
             <ProgressChart
               data={{
-                labels: ['Satisfaction', 'Efficiency', 'Quality', 'Response'],
-                data: [0.92, 0.87, 0.95, 0.89]
+                labels: ['Completion', 'Cancel'],
+                data: [
+                  Math.max(0, Math.min(1, safeNum(analytics?.kpis?.completionRate) / 100)),
+                  Math.max(0, Math.min(1, safeNum(analytics?.kpis?.cancelRate) / 100)),
+                ]
               }}
               width={chartWidth}
               height={220}
@@ -385,112 +539,38 @@ export default function AdminReports() {
           </View>
         </View>
 
-        {/* Department Performance */}
-        <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Department Performance</RNText>
-          <View style={styles.departmentContainer}>
-            {departmentStats.map((dept, index) => (
-              <View key={index} style={styles.departmentCard}>
-                <View style={styles.departmentHeader}>
-                  <View style={[styles.departmentIcon, { backgroundColor: `${dept.color}15` }]}>
-                    <MaterialCommunityIcons name="hospital-building" size={20} color={dept.color} />
-                  </View>
-                  <View style={styles.departmentInfo}>
-                    <RNText style={styles.departmentName}>{dept.name}</RNText>
-                    <RNText style={styles.departmentSubtext}>{dept.appointments} appointments</RNText>
-                  </View>
-                  <RNText style={styles.departmentRevenue}>{dept.revenue}</RNText>
-                </View>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      {
-                        backgroundColor: dept.color,
-                        width: `${(dept.appointments / 312) * 100}%`
-                      }
-                    ]}
-                  />
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Top Doctors */}
-        <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Top Performing Doctors</RNText>
-          <View style={styles.doctorsContainer}>
-            {topDoctors.map((doctor, index) => (
-              <View key={index} style={styles.doctorCard}>
-                <View style={styles.doctorRank}>
-                  <RNText style={styles.doctorRankText}>#{index + 1}</RNText>
-                </View>
-                <View style={styles.doctorAvatar}>
-                  <MaterialCommunityIcons name="doctor" size={24} color="#1E4BA3" />
-                </View>
-                <View style={styles.doctorInfo}>
-                  <RNText style={styles.doctorName}>{doctor.name}</RNText>
-                  <RNText style={styles.doctorSpecialty}>{doctor.specialty}</RNText>
-                  <View style={styles.doctorStats}>
-                    <View style={styles.doctorStat}>
-                      <MaterialCommunityIcons name="account-group" size={12} color="#6B7280" />
-                      <RNText style={styles.doctorStatText}>{doctor.patients}</RNText>
-                    </View>
-                    <View style={styles.doctorStat}>
-                      <MaterialCommunityIcons name="star" size={12} color="#F59E0B" />
-                      <RNText style={styles.doctorStatText}>{doctor.rating}</RNText>
-                    </View>
-                  </View>
-                </View>
-                <RNText style={styles.doctorRevenue}>{doctor.revenue}</RNText>
-              </View>
-            ))}
-          </View>
-        </View>
-
         {/* Recent Activity */}
         <View style={styles.section}>
           <RNText style={styles.sectionTitle}>Recent Activity</RNText>
           <View style={styles.activityContainer}>
-            {recentActivity.map((activity, index) => (
-              <View key={index} style={styles.activityCard}>
-                <View style={[styles.activityIcon, { backgroundColor: `${activity.color}15` }]}>
-                  <MaterialCommunityIcons name={activity.icon as any} size={20} color={activity.color} />
+            {(analytics?.recentActivity || []).length ? (
+              (analytics?.recentActivity || []).map((n) => {
+                const isAppointment = /appointment/i.test(n.title) || /appointment/i.test(n.message);
+                const icon = isAppointment ? 'calendar-check' : n.type === 'user' ? 'account-plus' : 'bell';
+                const color = isAppointment ? '#3B82F6' : n.type === 'user' ? '#10B981' : '#8B5CF6';
+                return (
+                  <View key={n.id} style={styles.activityCard}>
+                    <View style={[styles.activityIcon, { backgroundColor: `${color}15` }]}>
+                      <MaterialCommunityIcons name={icon as any} size={20} color={color} />
+                    </View>
+                    <View style={styles.activityContent}>
+                      <RNText style={styles.activityText}>{n.title}</RNText>
+                      <RNText style={styles.activityTime}>{formatTimeAgo(n.created_at)}</RNText>
+                    </View>
+                  </View>
+                );
+              })
+            ) : (
+              <View style={styles.activityCard}>
+                <View style={[styles.activityIcon, { backgroundColor: '#6B728015' }]}>
+                  <MaterialCommunityIcons name="bell" size={20} color="#6B7280" />
                 </View>
                 <View style={styles.activityContent}>
-                  <RNText style={styles.activityText}>{activity.text}</RNText>
-                  <RNText style={styles.activityTime}>{activity.time}</RNText>
+                  <RNText style={styles.activityText}>No recent activity</RNText>
+                  <RNText style={styles.activityTime}>{analytics ? '—' : 'Load reports to see activity'}</RNText>
                 </View>
               </View>
-            ))}
-          </View>
-        </View>
-
-        {/* Quick Stats Summary */}
-        <View style={styles.section}>
-          <RNText style={styles.sectionTitle}>Quick Summary</RNText>
-          <View style={styles.summaryCard}>
-            <View style={styles.summaryRow}>
-              <RNText style={styles.summaryLabel}>Average Wait Time</RNText>
-              <RNText style={styles.summaryValue}>12 mins</RNText>
-            </View>
-            <View style={styles.summaryRow}>
-              <RNText style={styles.summaryLabel}>Appointment Success Rate</RNText>
-              <RNText style={[styles.summaryValue, { color: '#10B981' }]}>94.2%</RNText>
-            </View>
-            <View style={styles.summaryRow}>
-              <RNText style={styles.summaryLabel}>Cancellation Rate</RNText>
-              <RNText style={[styles.summaryValue, { color: '#EF4444' }]}>5.8%</RNText>
-            </View>
-            <View style={styles.summaryRow}>
-              <RNText style={styles.summaryLabel}>New Patient Growth</RNText>
-              <RNText style={[styles.summaryValue, { color: '#10B981' }]}>+15.2%</RNText>
-            </View>
-            <View style={styles.summaryRow}>
-              <RNText style={styles.summaryLabel}>Revenue per Patient</RNText>
-              <RNText style={styles.summaryValue}>$372</RNText>
-            </View>
+            )}
           </View>
         </View>
       </ScrollView>

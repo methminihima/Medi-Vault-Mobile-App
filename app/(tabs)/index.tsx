@@ -38,8 +38,11 @@ export default function DashboardScreen() {
     return <Redirect href={"/(tabs)/pharmacist-dashboard" as any}  />;
   }
 
-  // For patient, redirect to explore for now
-  // You can create patient-dashboard.tsx later
+  if (user?.role === 'patient') {
+    return <Redirect href="/(tabs)/patient-dashboard" />;
+  }
+
+  // Default fallback
   return <Redirect href="/(tabs)/explore" />;
 }
 

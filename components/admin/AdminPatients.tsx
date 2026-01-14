@@ -2,9 +2,9 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useState } from 'react';
 import {
     Alert,
-    ImageBackground,
     Modal,
     Platform,
+    RefreshControl,
     Text as RNText,
     ScrollView,
     StyleSheet,
@@ -13,173 +13,121 @@ import {
     View
 } from 'react-native';
 
-interface Patient {
-  id: string;
+import { API_BASE_URL } from '@config/constants';
+
+type PatientStatus = 'active' | 'inactive';
+
+interface PatientRegistryRow {
+  patientId: string | null;
+  userId: string;
   fullName: string;
   email: string;
-  phone: string;
-  dateOfBirth: string;
-  gender: 'male' | 'female' | 'other';
-  bloodGroup: string;
-  address: string;
-  emergencyContact: string;
-  registrationDate: string;
-  lastVisit: string;
-  totalVisits: number;
-  status: 'active' | 'inactive';
-  medicalConditions?: string[];
+  username?: string;
+  isActive: boolean;
+  createdAt?: string;
+
+  nic?: string | null;
+  healthId?: string | null;
+  rfid?: string | null;
+  rfidMasked?: string | null;
+  dateOfBirth?: string | null;
+  gender?: string | null;
+  contactInfo?: string | null;
+  address?: string | null;
+  bloodType?: string | null;
+  allergies?: string | null;
+}
+
+function safeText(v: any): string {
+  if (v === null || v === undefined) return '';
+  return String(v);
+}
+
+function normalizeStatus(isActive: boolean): PatientStatus {
+  return isActive ? 'active' : 'inactive';
+}
+
+function toCsvRow(fields: string[]): string {
+  return fields
+    .map((f) => {
+      const s = safeText(f);
+      const escaped = s.replace(/\"/g, '""');
+      return `"${escaped}"`;
+    })
+    .join(',');
 }
 
 export default function AdminPatients() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [selectedPatient, setSelectedPatient] = useState<PatientRegistryRow | null>(null);
 
-  const [patients, setPatients] = useState<Patient[]>([
-    {
-      id: '1',
-      fullName: 'John Smith',
-      email: 'john.smith@email.com',
-      phone: '+1 234-567-8901',
-      dateOfBirth: '1985-03-15',
-      gender: 'male',
-      bloodGroup: 'O+',
-      address: '123 Main St, New York, NY 10001',
-      emergencyContact: '+1 234-567-8999',
-      registrationDate: '2024-01-15',
-      lastVisit: '2024-11-25',
-      totalVisits: 12,
-      status: 'active',
-      medicalConditions: ['Hypertension', 'Type 2 Diabetes']
-    },
-    {
-      id: '2',
-      fullName: 'Emma Wilson',
-      email: 'emma.wilson@email.com',
-      phone: '+1 234-567-8902',
-      dateOfBirth: '1990-07-22',
-      gender: 'female',
-      bloodGroup: 'A+',
-      address: '456 Oak Ave, Los Angeles, CA 90001',
-      emergencyContact: '+1 234-567-8998',
-      registrationDate: '2024-02-10',
-      lastVisit: '2024-11-28',
-      totalVisits: 8,
-      status: 'active',
-      medicalConditions: ['Asthma']
-    },
-    {
-      id: '3',
-      fullName: 'Michael Brown',
-      email: 'michael.brown@email.com',
-      phone: '+1 234-567-8903',
-      dateOfBirth: '1978-12-05',
-      gender: 'male',
-      bloodGroup: 'B+',
-      address: '789 Pine Rd, Chicago, IL 60601',
-      emergencyContact: '+1 234-567-8997',
-      registrationDate: '2024-01-20',
-      lastVisit: '2024-10-15',
-      totalVisits: 15,
-      status: 'active',
-      medicalConditions: ['High Cholesterol']
-    },
-    {
-      id: '4',
-      fullName: 'Sarah Johnson',
-      email: 'sarah.johnson@email.com',
-      phone: '+1 234-567-8904',
-      dateOfBirth: '1995-05-18',
-      gender: 'female',
-      bloodGroup: 'AB+',
-      address: '321 Elm St, Houston, TX 77001',
-      emergencyContact: '+1 234-567-8996',
-      registrationDate: '2024-03-05',
-      lastVisit: '2024-11-30',
-      totalVisits: 5,
-      status: 'active'
-    },
-    {
-      id: '5',
-      fullName: 'David Martinez',
-      email: 'david.martinez@email.com',
-      phone: '+1 234-567-8905',
-      dateOfBirth: '1982-09-30',
-      gender: 'male',
-      bloodGroup: 'O-',
-      address: '654 Maple Dr, Miami, FL 33101',
-      emergencyContact: '+1 234-567-8995',
-      registrationDate: '2024-02-28',
-      lastVisit: '2024-09-10',
-      totalVisits: 3,
-      status: 'inactive'
-    },
-    {
-      id: '6',
-      fullName: 'Lisa Anderson',
-      email: 'lisa.anderson@email.com',
-      phone: '+1 234-567-8906',
-      dateOfBirth: '1988-11-12',
-      gender: 'female',
-      bloodGroup: 'A-',
-      address: '987 Cedar Ln, Seattle, WA 98101',
-      emergencyContact: '+1 234-567-8994',
-      registrationDate: '2024-04-15',
-      lastVisit: '2024-11-29',
-      totalVisits: 7,
-      status: 'active',
-      medicalConditions: ['Migraine', 'Anxiety']
-    },
-    {
-      id: '7',
-      fullName: 'Robert Taylor',
-      email: 'robert.taylor@email.com',
-      phone: '+1 234-567-8907',
-      dateOfBirth: '1975-04-08',
-      gender: 'male',
-      bloodGroup: 'B-',
-      address: '147 Birch Ct, Boston, MA 02101',
-      emergencyContact: '+1 234-567-8993',
-      registrationDate: '2024-01-08',
-      lastVisit: '2024-11-20',
-      totalVisits: 20,
-      status: 'active',
-      medicalConditions: ['Arthritis', 'Heart Disease']
-    },
-    {
-      id: '8',
-      fullName: 'Jennifer White',
-      email: 'jennifer.white@email.com',
-      phone: '+1 234-567-8908',
-      dateOfBirth: '1992-06-25',
-      gender: 'female',
-      bloodGroup: 'AB-',
-      address: '258 Willow Way, Denver, CO 80201',
-      emergencyContact: '+1 234-567-8992',
-      registrationDate: '2024-05-20',
-      lastVisit: '2024-08-15',
-      totalVisits: 2,
-      status: 'inactive'
+  const [patients, setPatients] = useState<PatientRegistryRow[]>([]);
+  const [stats, setStats] = useState<{ total: number; active: number; inactive: number }>(
+    { total: 0, active: 0, inactive: 0 }
+  );
+  const [refreshing, setRefreshing] = useState(false);
+
+  const fetchRegistry = async () => {
+    const qs = new URLSearchParams();
+    if (searchQuery.trim()) qs.set('q', searchQuery.trim());
+    if (filterStatus && filterStatus !== 'all') qs.set('status', filterStatus);
+
+    const url = `${API_BASE_URL}/patients/registry${qs.toString() ? `?${qs.toString()}` : ''}`;
+    const resp = await fetch(url);
+    const json = await resp.json();
+
+    if (!resp.ok || !json?.success) {
+      throw new Error(json?.message || 'Failed to load patients');
     }
-  ]);
 
-  const filteredPatients = patients.filter(patient => {
-    const matchesSearch = 
-      searchQuery === '' ||
-      patient.fullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      patient.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      patient.phone.includes(searchQuery) ||
-      patient.bloodGroup.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesStatus = filterStatus === 'all' || patient.status === filterStatus;
-    
-    return matchesSearch && matchesStatus;
-  });
+    setPatients(Array.isArray(json.data) ? json.data : []);
+    if (json.stats) {
+      setStats({
+        total: Number(json.stats.total || 0),
+        active: Number(json.stats.active || 0),
+        inactive: Number(json.stats.inactive || 0),
+      });
+    }
+  };
 
-  const calculateAge = (dateOfBirth: string) => {
+  React.useEffect(() => {
+    fetchRegistry().catch((e) => {
+      console.error(e);
+      Alert.alert('Error', e?.message || 'Failed to load patients');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterStatus]);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => {
+      fetchRegistry().catch((e) => {
+        console.error(e);
+      });
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    try {
+      await fetchRegistry();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to refresh');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const filteredPatients = patients;
+
+  const calculateAge = (dateOfBirth?: string | null) => {
+    if (!dateOfBirth) return null;
     const today = new Date();
     const birthDate = new Date(dateOfBirth);
+    if (Number.isNaN(birthDate.getTime())) return null;
     let age = today.getFullYear() - birthDate.getFullYear();
     const monthDiff = today.getMonth() - birthDate.getMonth();
     if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
@@ -188,18 +136,62 @@ export default function AdminPatients() {
     return age;
   };
 
-  const viewPatientDetails = (patient: Patient) => {
+  const viewPatientDetails = (patient: PatientRegistryRow) => {
     setSelectedPatient(patient);
     setShowDetailsModal(true);
   };
 
-  const togglePatientStatus = (patient: Patient) => {
-    const newStatus: Patient['status'] = patient.status === 'active' ? 'inactive' : 'active';
-    const updatedPatients = patients.map(p => 
-      p.id === patient.id ? { ...p, status: newStatus } : p
+  const togglePatientStatus = async (patient: PatientRegistryRow) => {
+    const nextActive = !patient.isActive;
+    try {
+      const resp = await fetch(`${API_BASE_URL}/users/${patient.userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: nextActive }),
+      });
+      const json = await resp.json();
+      if (!resp.ok || !json?.success) {
+        throw new Error(json?.message || 'Failed to update status');
+      }
+      Alert.alert('Success', `Patient ${nextActive ? 'activated' : 'deactivated'} successfully`);
+      await fetchRegistry();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to update status');
+    }
+  };
+
+  const exportCsv = async () => {
+    const header = toCsvRow([
+      'Full Name',
+      'Email',
+      'NIC',
+      'Contact',
+      'DOB',
+      'Gender',
+      'Blood Type',
+      'RFID',
+      'Status',
+      'Created At',
+    ]);
+
+    const rows = filteredPatients.map((p) =>
+      toCsvRow([
+        p.fullName,
+        p.email,
+        safeText(p.nic || ''),
+        safeText(p.contactInfo || ''),
+        safeText(p.dateOfBirth || ''),
+        safeText(p.gender || ''),
+        safeText(p.bloodType || ''),
+        safeText(p.rfidMasked || p.rfid || ''),
+        normalizeStatus(p.isActive),
+        safeText(p.createdAt || ''),
+      ])
     );
-    setPatients(updatedPatients);
-    Alert.alert('Success', `Patient ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+
+    const csv = [header, ...rows].join('\n');
+
+    Alert.alert('Patients CSV', csv);
   };
 
   const getGenderIcon = (gender: string) => {
@@ -219,173 +211,155 @@ export default function AdminPatients() {
   };
 
   return (
-    <ImageBackground
-      source={require('../../assets/images/Background-image.jpg')}
-      style={styles.container}
-      resizeMode="cover"
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.headerTop}>
-          <RNText style={styles.headerTitle}>Patient Records</RNText>
-          <View style={styles.statsContainer}>
-            <View style={styles.statBadge}>
-              <RNText style={styles.statNumber}>{patients.filter(p => p.status === 'active').length}</RNText>
-              <RNText style={styles.statLabel}>Active</RNText>
-            </View>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+      >
+        {/* Title */}
+        <View style={styles.titleBlock}>
+          <RNText style={styles.pageTitle}>Patient Records</RNText>
+          <RNText style={styles.pageSubtitle}>Manage patient profiles and registry data</RNText>
+        </View>
+
+        {/* Summary cards */}
+        <View style={styles.statsRow}>
+          <View style={styles.statCard}>
+            <RNText style={styles.statLabel}>Total Patients</RNText>
+            <RNText style={styles.statValue}>{stats.total}</RNText>
+          </View>
+          <View style={styles.statCard}>
+            <RNText style={styles.statLabel}>Active</RNText>
+            <RNText style={[styles.statValue, { color: '#10B981' }]}>{stats.active}</RNText>
+          </View>
+          <View style={styles.statCard}>
+            <RNText style={styles.statLabel}>Inactive</RNText>
+            <RNText style={[styles.statValue, { color: '#6B7280' }]}>{stats.inactive}</RNText>
           </View>
         </View>
 
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Ionicons name="search" size={20} color="#9CA3AF" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by name, email, phone, or blood group..."
-            placeholderTextColor="#9CA3AF"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery !== '' && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={20} color="#9CA3AF" />
-            </TouchableOpacity>
-          )}
+        {/* List header */}
+        <View style={styles.listHeader}>
+          <View>
+            <RNText style={styles.listTitle}>All Patients</RNText>
+            <RNText style={styles.listSubtitle}>{filteredPatients.length} record(s)</RNText>
+          </View>
+          <TouchableOpacity style={styles.exportButton} onPress={exportCsv}>
+            <Ionicons name="download-outline" size={18} color="#111827" />
+            <RNText style={styles.exportText}>Export CSV</RNText>
+          </TouchableOpacity>
         </View>
 
         {/* Filters */}
-        <View style={styles.filtersContainer}>
-          <TouchableOpacity
-            style={[styles.filterChip, filterStatus === 'all' && styles.filterChipActive]}
-            onPress={() => setFilterStatus('all')}
-          >
-            <RNText style={[styles.filterChipText, filterStatus === 'all' && styles.filterChipTextActive]}>
-              All Patients
-            </RNText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterChip, filterStatus === 'active' && styles.filterChipActive]}
-            onPress={() => setFilterStatus('active')}
-          >
-            <RNText style={[styles.filterChipText, filterStatus === 'active' && styles.filterChipTextActive]}>
-              Active
-            </RNText>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.filterChip, filterStatus === 'inactive' && styles.filterChipActive]}
-            onPress={() => setFilterStatus('inactive')}
-          >
-            <RNText style={[styles.filterChipText, filterStatus === 'inactive' && styles.filterChipTextActive]}>
-              Inactive
-            </RNText>
-          </TouchableOpacity>
+        <View style={styles.filtersRow}>
+          <View style={styles.searchBox}>
+            <Ionicons name="search" size={18} color="#6B7280" />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by name, email, NIC, RFID, or contact..."
+              placeholderTextColor="#9CA3AF"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
+
+          <View style={styles.filtersContainer}>
+            <TouchableOpacity
+              style={[styles.filterChip, filterStatus === 'all' && styles.filterChipActive]}
+              onPress={() => setFilterStatus('all')}
+            >
+              <RNText style={[styles.filterChipText, filterStatus === 'all' && styles.filterChipTextActive]}>
+                All
+              </RNText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterChip, filterStatus === 'active' && styles.filterChipActive]}
+              onPress={() => setFilterStatus('active')}
+            >
+              <RNText style={[styles.filterChipText, filterStatus === 'active' && styles.filterChipTextActive]}>
+                Active
+              </RNText>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.filterChip, filterStatus === 'inactive' && styles.filterChipActive]}
+              onPress={() => setFilterStatus('inactive')}
+            >
+              <RNText style={[styles.filterChipText, filterStatus === 'inactive' && styles.filterChipTextActive]}>
+                Inactive
+              </RNText>
+            </TouchableOpacity>
+          </View>
         </View>
-      </View>
 
-      {/* Patients List */}
-      <ScrollView
-        style={styles.patientsList}
-        contentContainerStyle={styles.patientsContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <RNText style={styles.resultCount}>
-          {filteredPatients.length} patient{filteredPatients.length !== 1 ? 's' : ''} found
-        </RNText>
-
-        {filteredPatients.map((patient) => (
-          <TouchableOpacity 
-            key={patient.id} 
-            style={styles.patientCard}
-            onPress={() => viewPatientDetails(patient)}
-            activeOpacity={0.7}
-          >
-            <View style={styles.patientLeft}>
-              <View style={[styles.patientAvatar, { backgroundColor: `${getGenderColor(patient.gender)}15` }]}>
-                <MaterialCommunityIcons
-                  name={getGenderIcon(patient.gender) as any}
-                  size={28}
-                  color={getGenderColor(patient.gender)}
-                />
-              </View>
+        {/* Table */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.table}>
+            <View style={styles.tableHeaderRow}>
+              <RNText style={[styles.th, styles.colPatient]}>Patient</RNText>
+              <RNText style={[styles.th, styles.colNic]}>NIC</RNText>
+              <RNText style={[styles.th, styles.colContact]}>Contact</RNText>
+              <RNText style={[styles.th, styles.colDob]}>DOB</RNText>
+              <RNText style={[styles.th, styles.colBlood]}>Blood</RNText>
+              <RNText style={[styles.th, styles.colRfid]}>RFID</RNText>
+              <RNText style={[styles.th, styles.colStatus]}>Status</RNText>
+              <RNText style={[styles.th, styles.colActions]}>Actions</RNText>
             </View>
 
-            <View style={styles.patientContent}>
-              <View style={styles.patientHeader}>
-                <RNText style={styles.patientName}>{patient.fullName}</RNText>
-                <View style={[styles.statusBadge, { backgroundColor: patient.status === 'active' ? '#10B98115' : '#6B728015' }]}>
-                  <View style={[styles.statusDot, { backgroundColor: patient.status === 'active' ? '#10B981' : '#6B7280' }]} />
-                  <RNText style={[styles.statusText, { color: patient.status === 'active' ? '#10B981' : '#6B7280' }]}>
-                    {patient.status}
-                  </RNText>
-                </View>
-              </View>
+            {filteredPatients.map((p) => {
+              const statusNorm = normalizeStatus(p.isActive);
+              const statusBg = statusNorm === 'active' ? '#D1FAE5' : '#E5E7EB';
+              const statusFg = statusNorm === 'active' ? '#10B981' : '#6B7280';
+              const age = calculateAge(p.dateOfBirth);
 
-              <View style={styles.patientMetrics}>
-                <View style={styles.metricItem}>
-                  <MaterialCommunityIcons name="calendar" size={14} color="#6B7280" />
-                  <RNText style={styles.metricText}>{calculateAge(patient.dateOfBirth)} years</RNText>
-                </View>
-                <View style={styles.metricItem}>
-                  <MaterialCommunityIcons name="water" size={14} color="#EF4444" />
-                  <RNText style={styles.metricText}>{patient.bloodGroup}</RNText>
-                </View>
-                <View style={styles.metricItem}>
-                  <MaterialCommunityIcons name="hospital-building" size={14} color="#6B7280" />
-                  <RNText style={styles.metricText}>{patient.totalVisits} visits</RNText>
-                </View>
-              </View>
-
-              <View style={styles.patientInfo}>
-                <View style={styles.infoRow}>
-                  <Ionicons name="mail-outline" size={14} color="#6B7280" />
-                  <RNText style={styles.infoText}>{patient.email}</RNText>
-                </View>
-                <View style={styles.infoRow}>
-                  <Ionicons name="call-outline" size={14} color="#6B7280" />
-                  <RNText style={styles.infoText}>{patient.phone}</RNText>
-                </View>
-                <View style={styles.infoRow}>
-                  <Ionicons name="time-outline" size={14} color="#6B7280" />
-                  <RNText style={styles.infoText}>Last visit: {patient.lastVisit}</RNText>
-                </View>
-              </View>
-
-              {patient.medicalConditions && patient.medicalConditions.length > 0 && (
-                <View style={styles.conditionsContainer}>
-                  {patient.medicalConditions.map((condition, index) => (
-                    <View key={index} style={styles.conditionBadge}>
-                      <RNText style={styles.conditionText}>{condition}</RNText>
+              return (
+                <View key={p.userId} style={styles.tableRow}>
+                  <View style={[styles.td, styles.colPatient]}>
+                    <RNText style={styles.cellMain}>{p.fullName || '—'}</RNText>
+                    <RNText style={styles.cellSub}>{p.email || '—'}</RNText>
+                  </View>
+                  <View style={[styles.td, styles.colNic]}>
+                    <RNText style={styles.cellMain}>{safeText(p.nic) || '—'}</RNText>
+                  </View>
+                  <View style={[styles.td, styles.colContact]}>
+                    <RNText style={styles.cellMain}>{safeText(p.contactInfo) || '—'}</RNText>
+                  </View>
+                  <View style={[styles.td, styles.colDob]}>
+                    <RNText style={styles.cellMain}>{safeText(p.dateOfBirth) || '—'}</RNText>
+                    <RNText style={styles.cellSub}>{age !== null ? `${age} yrs` : '—'}</RNText>
+                  </View>
+                  <View style={[styles.td, styles.colBlood]}>
+                    <View style={styles.pill}>
+                      <RNText style={styles.pillText}>{safeText(p.bloodType) || '—'}</RNText>
                     </View>
-                  ))}
+                  </View>
+                  <View style={[styles.td, styles.colRfid]}>
+                    <RNText style={styles.cellMain}>{safeText(p.rfidMasked || p.rfid) || '—'}</RNText>
+                  </View>
+                  <View style={[styles.td, styles.colStatus]}>
+                    <View style={[styles.statusPill, { backgroundColor: statusBg }]}>
+                      <RNText style={[styles.statusPillText, { color: statusFg }]}>
+                        {statusNorm.charAt(0).toUpperCase() + statusNorm.slice(1)}
+                      </RNText>
+                    </View>
+                  </View>
+                  <View style={[styles.td, styles.colActions]}>
+                    <TouchableOpacity style={styles.actionIcon} onPress={() => viewPatientDetails(p)}>
+                      <Ionicons name="eye-outline" size={18} color="#6B7280" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.actionIcon} onPress={() => togglePatientStatus(p)}>
+                      <Ionicons
+                        name={p.isActive ? 'pause-outline' : 'play-outline'}
+                        size={18}
+                        color="#F59E0B"
+                      />
+                    </TouchableOpacity>
+                  </View>
                 </View>
-              )}
-
-              <View style={styles.actionButtons}>
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.viewButton]}
-                  onPress={() => viewPatientDetails(patient)}
-                >
-                  <Ionicons name="eye-outline" size={16} color="#3B82F6" />
-                  <RNText style={styles.viewButtonText}>View Details</RNText>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[styles.actionButton, styles.toggleButton]}
-                  onPress={() => togglePatientStatus(patient)}
-                >
-                  <Ionicons
-                    name={patient.status === 'active' ? 'pause-outline' : 'play-outline'}
-                    size={16}
-                    color="#F59E0B"
-                  />
-                  <RNText style={styles.toggleButtonText}>
-                    {patient.status === 'active' ? 'Deactivate' : 'Activate'}
-                  </RNText>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
+              );
+            })}
+          </View>
+        </ScrollView>
 
         {filteredPatients.length === 0 && (
           <View style={styles.emptyState}>
@@ -394,7 +368,6 @@ export default function AdminPatients() {
             <RNText style={styles.emptySubtext}>Try adjusting your search or filters</RNText>
           </View>
         )}
-      </ScrollView>
 
       {/* Patient Details Modal */}
       <Modal
@@ -415,30 +388,50 @@ export default function AdminPatients() {
             {selectedPatient && (
               <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
                 <View style={styles.detailsHeader}>
-                  <View style={[styles.detailsAvatar, { backgroundColor: `${getGenderColor(selectedPatient.gender)}15` }]}>
+                  <View style={[styles.detailsAvatar, { backgroundColor: `${getGenderColor(selectedPatient.gender || 'other')}15` }]}>
                     <MaterialCommunityIcons
-                      name={getGenderIcon(selectedPatient.gender) as any}
+                      name={getGenderIcon(selectedPatient.gender || 'other') as any}
                       size={48}
-                      color={getGenderColor(selectedPatient.gender)}
+                      color={getGenderColor(selectedPatient.gender || 'other')}
                     />
                   </View>
                   <RNText style={styles.detailsName}>{selectedPatient.fullName}</RNText>
-                  <RNText style={styles.detailsAge}>{calculateAge(selectedPatient.dateOfBirth)} years old</RNText>
+                  <RNText style={styles.detailsAge}>
+                    {calculateAge(selectedPatient.dateOfBirth) !== null
+                      ? `${calculateAge(selectedPatient.dateOfBirth)} years old`
+                      : '—'}
+                  </RNText>
                 </View>
 
                 <View style={styles.detailsSection}>
                   <RNText style={styles.detailsSectionTitle}>Personal Information</RNText>
                   <View style={styles.detailRow}>
                     <RNText style={styles.detailLabel}>Date of Birth</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.dateOfBirth}</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.dateOfBirth) || '—'}</RNText>
                   </View>
                   <View style={styles.detailRow}>
                     <RNText style={styles.detailLabel}>Gender</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.gender.charAt(0).toUpperCase() + selectedPatient.gender.slice(1)}</RNText>
+                    <RNText style={styles.detailValue}>
+                      {safeText(selectedPatient.gender)
+                        ? safeText(selectedPatient.gender).charAt(0).toUpperCase() + safeText(selectedPatient.gender).slice(1)
+                        : '—'}
+                    </RNText>
                   </View>
                   <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Blood Group</RNText>
-                    <RNText style={[styles.detailValue, styles.bloodGroup]}>{selectedPatient.bloodGroup}</RNText>
+                    <RNText style={styles.detailLabel}>Blood Type</RNText>
+                    <RNText style={[styles.detailValue, styles.bloodGroup]}>{safeText(selectedPatient.bloodType) || '—'}</RNText>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <RNText style={styles.detailLabel}>NIC</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.nic) || '—'}</RNText>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <RNText style={styles.detailLabel}>Health ID</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.healthId) || '—'}</RNText>
+                  </View>
+                  <View style={styles.detailRow}>
+                    <RNText style={styles.detailLabel}>RFID</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.rfidMasked || selectedPatient.rfid) || '—'}</RNText>
                   </View>
                 </View>
 
@@ -449,45 +442,29 @@ export default function AdminPatients() {
                     <RNText style={styles.detailValue}>{selectedPatient.email}</RNText>
                   </View>
                   <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Phone</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.phone}</RNText>
+                    <RNText style={styles.detailLabel}>Contact</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.contactInfo) || '—'}</RNText>
                   </View>
                   <View style={styles.detailRow}>
                     <RNText style={styles.detailLabel}>Address</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.address}</RNText>
-                  </View>
-                  <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Emergency Contact</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.emergencyContact}</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.address) || '—'}</RNText>
                   </View>
                 </View>
 
                 <View style={styles.detailsSection}>
                   <RNText style={styles.detailsSectionTitle}>Medical History</RNText>
                   <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Registration Date</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.registrationDate}</RNText>
+                    <RNText style={styles.detailLabel}>Registered</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.createdAt) || '—'}</RNText>
                   </View>
                   <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Last Visit</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.lastVisit}</RNText>
+                    <RNText style={styles.detailLabel}>Blood Type</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.bloodType) || '—'}</RNText>
                   </View>
                   <View style={styles.detailRow}>
-                    <RNText style={styles.detailLabel}>Total Visits</RNText>
-                    <RNText style={styles.detailValue}>{selectedPatient.totalVisits}</RNText>
+                    <RNText style={styles.detailLabel}>Allergies</RNText>
+                    <RNText style={styles.detailValue}>{safeText(selectedPatient.allergies) || '—'}</RNText>
                   </View>
-                  {selectedPatient.medicalConditions && selectedPatient.medicalConditions.length > 0 && (
-                    <View style={styles.detailRow}>
-                      <RNText style={styles.detailLabel}>Medical Conditions</RNText>
-                      <View style={styles.conditionsListContainer}>
-                        {selectedPatient.medicalConditions.map((condition, index) => (
-                          <View key={index} style={styles.conditionBadgeLarge}>
-                            <RNText style={styles.conditionTextLarge}>{condition}</RNText>
-                          </View>
-                        ))}
-                      </View>
-                    </View>
-                  )}
                 </View>
               </ScrollView>
             )}
@@ -503,78 +480,118 @@ export default function AdminPatients() {
           </View>
         </View>
       </Modal>
-    </ImageBackground>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#F7F8FA',
   },
-  header: {
+  content: {
+    padding: 16,
+    paddingBottom: 28,
+  },
+  titleBlock: {
+    marginBottom: 14,
+  },
+  pageTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: '#111827',
+  },
+  pageSubtitle: {
+    marginTop: 2,
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 14,
+  },
+  statCard: {
     backgroundColor: '#fff',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
+    borderRadius: 12,
+    padding: 14,
+    minWidth: 140,
+    flexGrow: 1,
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
+        shadowOpacity: 0.06,
+        shadowRadius: 6,
         shadowOffset: { width: 0, height: 2 },
       },
       android: { elevation: 2 },
     }),
   },
-  headerTop: {
+  statLabel: {
+    fontSize: 12,
+    color: '#6B7280',
+    fontWeight: '600',
+  },
+  statValue: {
+    marginTop: 6,
+    fontSize: 20,
+    color: '#111827',
+    fontWeight: '800',
+  },
+  listHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 10,
   },
-  headerTitle: {
-    fontSize: 24,
+  listTitle: {
+    fontSize: 16,
     fontWeight: '800',
-    color: '#1F2937',
+    color: '#111827',
   },
-  statsContainer: {
+  listSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#6B7280',
+  },
+  exportButton: {
     flexDirection: 'row',
-    gap: 8,
-  },
-  statBadge: {
     alignItems: 'center',
-    backgroundColor: '#10B98115',
+    gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 10,
     borderRadius: 12,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
-  statNumber: {
-    fontSize: 18,
+  exportText: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#10B981',
+    color: '#111827',
   },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: '#10B981',
-  },
-  searchContainer: {
+  filtersRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#F3F4F6',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
+    gap: 10,
     marginBottom: 12,
   },
-  searchIcon: {
-    marginRight: 8,
+  searchBox: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
   searchInput: {
     flex: 1,
     fontSize: 14,
-    color: '#1F2937',
+    color: '#111827',
   },
   filtersContainer: {
     flexDirection: 'row',
@@ -600,167 +617,104 @@ const styles = StyleSheet.create({
     color: '#1E4BA3',
     fontWeight: '600',
   },
-  patientsList: {
-    flex: 1,
-  },
-  patientsContent: {
-    padding: 16,
-  },
-  resultCount: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginBottom: 12,
-  },
-  patientCard: {
-    flexDirection: 'row',
+  table: {
     backgroundColor: '#fff',
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        shadowOffset: { width: 0, height: 2 },
-      },
-      android: { elevation: 2 },
-    }),
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    minWidth: 920,
   },
-  patientLeft: {
-    marginRight: 12,
+  tableHeaderRow: {
+    flexDirection: 'row',
+    backgroundColor: '#F9FAFB',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E7EB',
   },
-  patientAvatar: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: 'center',
+  th: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#374151',
+  },
+  tableRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  td: {
+    paddingVertical: 12,
+    paddingHorizontal: 12,
     justifyContent: 'center',
   },
-  patientContent: {
-    flex: 1,
-  },
-  patientHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  patientName: {
-    fontSize: 16,
+  cellMain: {
+    fontSize: 13,
     fontWeight: '700',
-    color: '#1F2937',
-    flex: 1,
+    color: '#111827',
   },
-  statusBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  statusText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  patientMetrics: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 8,
-  },
-  metricItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  metricText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#6B7280',
-  },
-  patientInfo: {
-    gap: 6,
-    marginBottom: 8,
-  },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  infoText: {
+  cellSub: {
+    marginTop: 2,
     fontSize: 12,
     color: '#6B7280',
-    flex: 1,
   },
-  conditionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
-  },
-  conditionBadge: {
-    backgroundColor: '#EF444415',
+  pill: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#EEF2FF',
   },
-  conditionText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#EF4444',
+  pillText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#3730A3',
   },
-  actionButtons: {
-    flexDirection: 'row',
-    gap: 8,
+  statusPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
   },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
+  statusPillText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  actionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
+    backgroundColor: '#F9FAFB',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 4,
+    marginRight: 8,
   },
-  viewButton: {
-    backgroundColor: '#3B82F615',
-  },
-  viewButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#3B82F6',
-  },
-  toggleButton: {
-    backgroundColor: '#F59E0B15',
-  },
-  toggleButtonText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#F59E0B',
-  },
+  colPatient: { width: 260 },
+  colNic: { width: 140 },
+  colContact: { width: 180 },
+  colDob: { width: 140 },
+  colBlood: { width: 110 },
+  colRfid: { width: 140 },
+  colStatus: { width: 130 },
+  colActions: { width: 140, flexDirection: 'row' },
+
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 60,
+    paddingVertical: 40,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#6B7280',
-    marginTop: 16,
+    marginTop: 12,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#111827',
   },
   emptySubtext: {
-    fontSize: 14,
-    color: '#9CA3AF',
-    marginTop: 8,
+    marginTop: 6,
+    fontSize: 13,
+    color: '#6B7280',
   },
 
   // Modal Styles
